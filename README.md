@@ -403,6 +403,13 @@ bin/steamexport   # 便捷启动脚本
 
 ## 更新日志
 
+### 0.3.2（2026-10-16）
+
+- 修复平铺截图网格（`.shot-tile`）高度塌陷：网格默认 `align-items:stretch`
+  会让 `aspect-ratio` 失效，改用 `padding-top:62.5%` 撑高 + 图片绝对填充；
+  并给 `.shot-grid` / `.shot-games` 加 `align-items:start` 双保险。
+  （上一版只修了游戏卡，漏了平铺格子）
+
 ### 0.3.1（2026-10-15）
 
 - 截图页默认改为**按最新时间平铺全部截图**（每批 200 张 + 「加载更多」），
