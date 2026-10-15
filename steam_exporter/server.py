@@ -1620,6 +1620,24 @@ def _parse_date(text) -> date | None:
 # ---------------------------------------------------------------------------
 # 启动
 # ---------------------------------------------------------------------------
+class _QuietHTTPServer(ThreadingHTTPServer):
+    """跳过 ``HTTPServer.server_bind`` 里的 ``socket.getfqdn()``。
+
+    设置 ``--host 0.0.0.0`` 时，标准库会对 host 做一次反向 DNS 解析，
+    在 DNS 不可达的环境（如 SteamOS 上 systemd-resolved 超时）会**阻塞约 5 秒**
+    才完成绑定，看起来就像启动卡死。这里直接用绑定的 host 作为 ``server_name``，
+    跳过反查（该字段仅用于日志展示）。
+    """
+
+    def server_bind(self) -> None:  # type: ignore[override]
+        import socketserver
+
+        socketserver.TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name = host
+        self.server_port = port
+
+
 def _local_ips() -> list[str]:
     """探测本机局域网 IPv4 地址（用于打印可访问 URL）。"""
     import socket
@@ -1673,7 +1691,7 @@ def serve(
     )
 
     try:
-        httpd = ThreadingHTTPServer((host, port), Handler)
+        httpd = _QuietHTTPServer((host, port), Handler)
     except OSError as exc:
         print(f"无法启动服务：{exc}")
         print(f"（端口 {port} 可能被占用，试试 --port 其他端口）")
