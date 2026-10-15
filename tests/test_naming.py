@@ -1,5 +1,6 @@
 """命名模板与输出路径测试。"""
 
+import struct
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -8,12 +9,29 @@ from pathlib import Path
 from steam_exporter.exporter import (
     MAX_CONCAT_ARG_LEN,
     ExportOptions,
+    _find_donor_init,
+    _init_video_size,
     _merge_stream_files,
     build_stream_input,
     render_relative_path,
     resolve_output_path,
 )
 from steam_exporter.model import KIND_CLIP, Source
+
+
+def _box(box_type: bytes, payload: bytes) -> bytes:
+    return struct.pack(">I", len(payload) + 8) + box_type + payload
+
+
+def make_init(width: int, height: int) -> bytes:
+    """构造一个带 moov/trak/tkhd 的假 init 段。"""
+    tkhd = _box(
+        b"tkhd",
+        b"\x00" * 76
+        + struct.pack(">I", width * 65536)
+        + struct.pack(">I", height * 65536),
+    )
+    return _box(b"ftyp", b"isom") + _box(b"moov", _box(b"trak", tkhd))
 
 
 def make_source(**overrides) -> Source:
@@ -127,6 +145,83 @@ class TestBuildStreamInput(unittest.TestCase):
             merged = Path(_merge_stream_files(files, root / "out", 0))
             self.assertTrue(merged.is_file())
             self.assertEqual(merged.read_bytes(), b"\x00\x01\x02")
+
+
+class TestCorruptionRecovery(unittest.TestCase):
+    def test_init_video_size(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "init.m4s"
+            path.write_bytes(make_init(1280, 800))
+            self.assertEqual(_init_video_size(path), (1280, 800))
+
+    def test_zero_byte_init_and_chunks_are_skipped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            part = Path(tmp) / "part"
+            part.mkdir()
+            (part / "init-stream0.m4s").write_bytes(b"")  # 空头
+            (part / "chunk-stream0-00001.m4s").write_bytes(b"x")
+            (part / "chunk-stream0-00002.m4s").write_bytes(b"")  # 空分片
+            spec = build_stream_input([part], 0)
+            files = spec.removeprefix("concat:").split("|")
+            self.assertNotIn("init-stream0.m4s", spec)
+            self.assertEqual(len(files), 1)
+
+    def test_missing_init_uses_donor(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            part = root / "clip" / "video" / "fg_1_20260101_000000"
+            part.mkdir(parents=True)
+            (part / "init-stream0.m4s").write_bytes(b"")
+            (part / "chunk-stream0-00001.m4s").write_bytes(b"x")
+            donor = root / "donor.m4s"
+            donor.write_bytes(make_init(1280, 800))
+            spec = build_stream_input([part], 0, donor_init=donor)
+            first = spec.removeprefix("concat:").split("|")[0]
+            self.assertEqual(Path(first), donor)
+
+    def test_find_donor_matches_resolution(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "gamerecordings"
+            good = root / "clips" / "clip_a" / "video" / "fg_x"
+            good.mkdir(parents=True)
+            (good / "init-stream0.m4s").write_bytes(make_init(1280, 800))
+            broken = root / "clips" / "clip_b" / "video" / "fg_y"
+            broken.mkdir(parents=True)
+            (broken / "init-stream0.m4s").write_bytes(b"")
+            source = Source(
+                kind=KIND_CLIP,
+                source_id="clip_b",
+                game_id="1",
+                app_id="1",
+                game="g",
+                recorded_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                parts=[broken],
+                width=1280,
+                height=800,
+            )
+            self.assertEqual(_find_donor_init(source, 0), good / "init-stream0.m4s")
+
+    def test_find_donor_rejects_wrong_resolution(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "gamerecordings"
+            good = root / "clips" / "clip_a" / "video" / "fg_x"
+            good.mkdir(parents=True)
+            (good / "init-stream0.m4s").write_bytes(make_init(1280, 720))
+            broken = root / "clips" / "clip_b" / "video" / "fg_y"
+            broken.mkdir(parents=True)
+            (broken / "init-stream0.m4s").write_bytes(b"")
+            source = Source(
+                kind=KIND_CLIP,
+                source_id="clip_b",
+                game_id="1",
+                app_id="1",
+                game="g",
+                recorded_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                parts=[broken],
+                width=1280,
+                height=800,
+            )
+            self.assertIsNone(_find_donor_init(source, 0))
 
 
 if __name__ == "__main__":

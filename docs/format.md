@@ -100,6 +100,15 @@ ffmpeg 的 `concat:` 协议会**同时打开列表中的所有文件**，因此�
 本工具启动时把软上限提升到硬上限（普通用户即可，无需特权）作为首选方案；若硬上限
 本身不足以容纳分片，则逐字节合并为单个临时文件后只用单文件输入。
 
+### init 段缺失 / 为 0 字节
+
+个别录制的 `init-stream0.m4s` 会是 0 字节（Steam 写入异常），此时 `moof+mdat` 分片
+存在，但缺少 `ftyp/moov`，ffmpeg 会报 `Track id unknown, no tfhd was found`。
+
+同一分辨率下 H.264 的 moov（含 SPS/PPS、`trex` 默认值）基本相同，因此可以借用其它
+**同分辨率**录制的 `init-stream0.m4s` 作为头部恢复。工具会解析 `moov/trak/tkhd` 的
+宽高，只有完全一致时才借用；否则报错跳过该条，不影响其余导出。音频 init 一般正常。
+
 ## 4. 滚动缓冲（后台录像）
 
 后台录像的 `session.mpd` 常见：

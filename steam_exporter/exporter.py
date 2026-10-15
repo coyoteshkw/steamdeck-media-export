@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import glob
 import json
 import os
 import re
 import shutil
+import struct
 import sys
 import tempfile
 import threading
@@ -130,13 +132,153 @@ class ProgressReporter:
 # ---------------------------------------------------------------------------
 # 输入构建
 # ---------------------------------------------------------------------------
-def _collect_stream_files(parts: list[Path], stream_index: int) -> list[Path]:
+# --- 初始化段（init）校验与损坏恢复 -----------------------------------------
+_INIT_VALID_CACHE: dict[str, bool] = {}
+_INIT_SIZE_CACHE: dict[str, tuple[int, int] | None] = {}
+_DONOR_CACHE: dict[tuple[str, int], list] = {}
+
+
+def _init_present(path: Path) -> bool:
+    """init 段存在且非空（0 字节视为缺失）。"""
+    try:
+        return path.stat().st_size > 0
+    except OSError:
+        return False
+
+
+def _init_is_valid(path: Path) -> bool:
+    """init 段非空且包含 ftyp/moov，可被 ffmpeg 解析。"""
+    key = str(path)
+    if key in _INIT_VALID_CACHE:
+        return _INIT_VALID_CACHE[key]
+    ok = False
+    try:
+        data = path.read_bytes()
+        ok = b"ftyp" in data[:64] and b"moov" in data
+    except OSError:
+        ok = False
+    _INIT_VALID_CACHE[key] = ok
+    return ok
+
+
+def _find_box(data: bytes, box_type: bytes) -> bytes | None:
+    """在 data 的顶层 box 中查找，返回其负载。"""
+    i = 0
+    n = len(data)
+    while i + 8 <= n:
+        size = struct.unpack_from(">I", data, i)[0]
+        kind = data[i + 4 : i + 8]
+        header = 8
+        if size == 1:
+            if i + 16 > n:
+                return None
+            size = struct.unpack_from(">Q", data, i + 8)[0]
+            header = 16
+        elif size == 0:
+            size = n - i
+        if size < header or i + size > n:
+            return None
+        if kind == box_type:
+            return data[i + header : i + size]
+        i += size
+    return None
+
+
+def _init_video_size(path: Path) -> tuple[int, int] | None:
+    """从 init 段的 moov/trak/tkhd 读出视频宽高。"""
+    key = str(path)
+    if key in _INIT_SIZE_CACHE:
+        return _INIT_SIZE_CACHE[key]
+    result = None
+    try:
+        data = path.read_bytes()
+        moov = _find_box(data, b"moov")
+        trak = _find_box(moov, b"trak") if moov else None
+        tkhd = _find_box(trak, b"tkhd") if trak else None
+        if tkhd and len(tkhd) >= 8:
+            width = struct.unpack_from(">I", tkhd, len(tkhd) - 8)[0] / 65536
+            height = struct.unpack_from(">I", tkhd, len(tkhd) - 4)[0] / 65536
+            result = (int(round(width)), int(round(height)))
+    except (OSError, struct.error):
+        result = None
+    _INIT_SIZE_CACHE[key] = result
+    return result
+
+
+def _gamerecordings_root(parts: list[Path]) -> Path | None:
+    for part in parts:
+        for ancestor in (part, *part.parents):
+            if ancestor.name == "gamerecordings":
+                return ancestor
+    return None
+
+
+def _collect_donor_inits(root: Path, stream_index: int) -> list[tuple]:
+    """搜集可作为“头部捐赠者”的有效 init 段。"""
+    candidates: list[tuple] = []
+    seen: set[str] = set()
+    patterns = [
+        str(root / "clips" / "*" / "video" / "*" / f"init-stream{stream_index}.m4s"),
+        str(root / "video" / "*" / f"init-stream{stream_index}.m4s"),
+    ]
+    for pattern in patterns:
+        for match in sorted(glob.glob(pattern)):
+            if match in seen:
+                continue
+            seen.add(match)
+            path = Path(match)
+            if not _init_is_valid(path):
+                continue
+            size = _init_video_size(path) if stream_index == 0 else None
+            candidates.append((size, path))
+    return candidates
+
+
+def _find_donor_init(source: Source, stream_index: int) -> Path | None:
+    """录制损坏（init 段丢失）时，从其它录制借用同分辨率的 init 段。
+
+    只在视频维度完全一致时才借用，避免花屏/解码失败。
+    """
+    root = _gamerecordings_root(source.parts)
+    if root is None:
+        return None
+    key = (str(root), stream_index)
+    if key not in _DONOR_CACHE:
+        _DONOR_CACHE[key] = _collect_donor_inits(root, stream_index)
+    candidates = _DONOR_CACHE[key]
+    if not candidates:
+        return None
+    if stream_index == 0 and source.width and source.height:
+        wanted = (source.width, source.height)
+        for size, path in candidates:
+            if size == wanted:
+                return path
+        return None
+    return candidates[0][1]
+
+
+def _has_init(parts: list[Path], stream_index: int) -> bool:
+    return any(_init_present(part / f"init-stream{stream_index}.m4s") for part in parts)
+
+
+def _collect_stream_files(
+    parts: list[Path],
+    stream_index: int,
+    donor_init: Path | None = None,
+) -> list[Path]:
     files: list[Path] = []
     for part in parts:
         init = part / f"init-stream{stream_index}.m4s"
-        if init.is_file():
+        if _init_present(init):
             files.append(init)
-        files.extend(sorted(part.glob(f"chunk-stream{stream_index}-*.m4s")))
+        elif donor_init is not None and _init_is_valid(donor_init):
+            files.append(donor_init)  # 借用其它录制的头
+        for chunk in sorted(part.glob(f"chunk-stream{stream_index}-*.m4s")):
+            try:
+                if chunk.stat().st_size > 0:  # 跳过 0 字节残片
+                    files.append(chunk)
+            except OSError:
+                continue
     return files
 
 
@@ -159,6 +301,7 @@ def build_stream_input(
     parts: list[Path],
     stream_index: int,
     link_root: Path | None = None,
+    donor_init: Path | None = None,
 ) -> str | None:
     """把多个会话目录的 ``init + chunk`` 串成一个 ffmpeg ``concat:`` 输入。
 
@@ -168,8 +311,10 @@ def build_stream_input(
 
     因此当参数过长时，改为在 ``link_root`` 下建立一批**短名符号链接**，
     用短路径重新拼 ``concat:``；再不行（极端数量）则逐字节合并成临时文件。
+
+    ``donor_init``：当本录制的 init 段丢失（0 字节/损坏）时，借用它作为头部。
     """
-    files = _collect_stream_files(parts, stream_index)
+    files = _collect_stream_files(parts, stream_index, donor_init)
     if not files:
         return None
 
@@ -224,11 +369,33 @@ def build_ffmpeg_args(
     options: ExportOptions,
     output: Path,
     link_root: Path | None = None,
+    warnings: list[str] | None = None,
 ) -> list[str]:
-    video_in = build_stream_input(source.parts, 0, link_root)
+    donor_video = None
+    if not _has_init(source.parts, 0):
+        donor_video = _find_donor_init(source, 0)
+        if donor_video is not None:
+            if warnings is not None:
+                warnings.append(
+                    "视频初始化段缺失（可能是 0 字节/损坏），已借用其它录制的"
+                    "同分辨率头部做 best-effort 恢复"
+                )
+        else:
+            raise FFmpegError(
+                f"视频初始化段缺失（可能是 0 字节/损坏），且未找到可借用的同分辨率头部："
+                f"{source.source_id}"
+            )
+
+    donor_audio = None
+    if not _has_init(source.parts, 1):
+        donor_audio = _find_donor_init(source, 1)
+        if donor_audio is not None and warnings is not None:
+            warnings.append("音频初始化段缺失，已借用其它录制的头部做 best-effort 恢复")
+
+    video_in = build_stream_input(source.parts, 0, link_root, donor_video)
     if video_in is None:
         raise FFmpegError(f"没有找到视频分片：{source.source_id}")
-    audio_in = build_stream_input(source.parts, 1, link_root)
+    audio_in = build_stream_input(source.parts, 1, link_root, donor_audio)
 
     args: list[str] = []
     codec = options.codec
@@ -512,7 +679,19 @@ class Exporter:
         base.mkdir(parents=True, exist_ok=True)
         link_root = Path(tempfile.mkdtemp(prefix=".steamexport-", dir=str(base)))
         try:
-            args = build_ffmpeg_args(source, self.options, output, link_root=link_root)
+            warnings: list[str] = []
+            args = build_ffmpeg_args(
+                source, self.options, output, link_root=link_root, warnings=warnings
+            )
+            for message in warnings:
+                self._log(f"  ! {message}")
+                self._emit(
+                    {
+                        "type": "item_warning",
+                        "source": source.to_dict(),
+                        "message": message,
+                    }
+                )
             try:
                 run_ffmpeg(
                     args,

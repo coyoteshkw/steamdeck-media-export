@@ -524,6 +524,10 @@ function handleJobEvent(ev) {
       appendLog(`跳过（已存在）：${ev.source.game} ${ev.source.recorded_display}`);
       updateOverall();
       break;
+    case "item_warning":
+      if (ev.source) setItemStatus(ev.source.id, "running", "已恢复");
+      appendLog(`⚠ ${ev.source ? ev.source.id : ""} ${ev.message || ""}`);
+      break;
     case "item_start":
       if (ev.source) {
         state.currentName = `${ev.source.game} · ${ev.source.recorded_display}`;
