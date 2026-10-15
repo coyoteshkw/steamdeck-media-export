@@ -18,6 +18,9 @@
 
 * { box-sizing: border-box; }
 
+/* 保证带 hidden 属性的元素一定隐藏（否则被 .modal{display:flex} 之类覆盖） */
+[hidden] { display: none !important; }
+
 html, body { height: 100%; }
 
 body {
