@@ -19,6 +19,8 @@ from urllib.parse import parse_qs, quote, urlparse
 
 from . import __version__
 from .download_cache import DownloadCache
+from .model import KIND_CLIP
+from .trash import Trash, dir_size
 from .exporter import (
     DEFAULT_TEMPLATE,
     MODE_COMPRESS,
@@ -239,15 +241,21 @@ class AppState:
         default_out: Path,
         token: str | None,
         download_cache: DownloadCache | None = None,
+        trash: Trash | None = None,
     ) -> None:
         self.resolver = build_resolver()
         self.default_user = default_user
         self.default_out = default_out
         self.token = token
         self.download_cache = download_cache
+        self.trash = trash
         self.jobs = Jobs()
         self._cache: dict[str, tuple[float, list]] = {}
         self._cache_lock = threading.Lock()
+
+    def invalidate(self) -> None:
+        with self._cache_lock:
+            self._cache.clear()
 
     def sources(self, user: str | None, ttl: float = 30.0) -> list:
         key = user or "auto"
@@ -341,6 +349,12 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path == "/api/export":
                 self._handle_export(payload)
+            elif path == "/api/delete":
+                self._handle_delete(payload)
+            elif path == "/api/trash/restore":
+                self._handle_trash_restore(payload)
+            elif path == "/api/trash/purge":
+                self._handle_trash_purge(payload)
             elif path == "/api/download/prepare":
                 self._handle_download_prepare(payload)
             elif path == "/api/cache/clear":
@@ -369,6 +383,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._handle_icon(path[len("/api/icon/"):])
         if path == "/api/jobs":
             return self._send_json({"jobs": []})
+        if path == "/api/trash":
+            return self._handle_trash_list()
         if path.startswith("/api/jobs/"):
             rest = path[len("/api/jobs/"):]
             if rest.endswith("/events"):
@@ -415,6 +431,8 @@ class Handler(BaseHTTPRequestHandler):
                 "cache": self.state.download_cache.stats()
                 if self.state.download_cache
                 else None,
+                "trash": self.state.trash.stats() if self.state.trash else None,
+                "steam_running": _steam_running(),
             }
         )
 
@@ -647,6 +665,81 @@ class Handler(BaseHTTPRequestHandler):
         removed = cache.clear()
         self._send_json({"ok": True, "removed": removed})
 
+    def _handle_delete(self, payload: dict) -> None:
+        """删除录制：默认移入回收站（可恢复），permanent=true 则彻底删除。"""
+        user = payload.get("user") or "auto"
+        ids = payload.get("ids") or ([payload["id"]] if payload.get("id") else [])
+        permanent = bool(payload.get("permanent"))
+        trash = self.state.trash
+        sources = {s.source_id: s for s in self.state.sources(user)}
+        deleted = 0
+        removed = 0
+        results = []
+        errors = []
+        for source_id in ids:
+            source = sources.get(str(source_id))
+            if source is None:
+                errors.append(f"找不到 {source_id}")
+                continue
+            paths = _delete_paths(source)
+            if not paths:
+                errors.append(f"{source_id} 没有可删除的文件")
+                continue
+            if permanent:
+                size = Trash.delete_permanently(paths)
+                results.append({"id": source_id, "size": size})
+            else:
+                if trash is None:
+                    errors.append("回收站未启用")
+                    continue
+                entry = trash.move(source, paths)
+                if entry is None:
+                    errors.append(f"{source_id} 移入回收站失败")
+                    continue
+                size = entry["size"]
+                results.append({"id": source_id, "size": size, "trash_id": entry["id"]})
+            deleted += 1
+            removed += size
+        self.state.invalidate()
+        self._send_json(
+            {
+                "ok": True,
+                "deleted": deleted,
+                "bytes": removed,
+                "permanent": permanent,
+                "results": results,
+                "errors": errors,
+                "steam_running": _steam_running(),
+            }
+        )
+
+    def _handle_trash_list(self) -> None:
+        trash = self.state.trash
+        if trash is None:
+            return self._send_json({"stats": None, "entries": []})
+        self._send_json({"stats": trash.stats(), "entries": trash.entries()})
+
+    def _handle_trash_restore(self, payload: dict) -> None:
+        trash = self.state.trash
+        if trash is None:
+            return self._error(500, "回收站未启用")
+        if payload.get("all"):
+            restored = trash.restore_all()
+        else:
+            restored = trash.restore(str(payload.get("id", "")))
+        self.state.invalidate()
+        self._send_json({"ok": True, "restored": restored, "stats": trash.stats()})
+
+    def _handle_trash_purge(self, payload: dict) -> None:
+        trash = self.state.trash
+        if trash is None:
+            return self._error(500, "回收站未启用")
+        if payload.get("all"):
+            freed = trash.purge_all()
+        else:
+            freed = trash.purge(str(payload.get("id", "")))
+        self._send_json({"ok": True, "freed": freed, "stats": trash.stats()})
+
     def _handle_icon(self, appid: str) -> None:
         art = find_game_art(appid.strip())
         if art is None:
@@ -830,6 +923,72 @@ def default_cache_dir() -> Path:
 
     base = os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
     return Path(base) / "steam-exporter" / "downloads"
+
+
+def default_trash_dir() -> Path:
+    import os
+
+    base = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local/share")
+    return Path(base) / "steam-exporter" / "trash"
+
+
+def _steam_running() -> bool:
+    try:
+        result = subprocess.run(
+            ["pgrep", "-x", "steam"], capture_output=True, text=True
+        )
+        return result.returncode == 0 and bool(result.stdout.strip())
+    except OSError:
+        return False
+
+
+def _gamerecordings_root(source) -> Path | None:
+    candidates = list(source.parts)
+    if source.clip_dir is not None:
+        candidates.append(source.clip_dir)
+    for start in candidates:
+        for ancestor in (start, *start.parents):
+            if ancestor.name == "gamerecordings":
+                return ancestor
+    return None
+
+
+def _recording_timeline(source) -> Path | None:
+    """找录像对应的顶层 timeline（按 daterecorded 最接近的匹配）。"""
+    root = _gamerecordings_root(source)
+    if root is None:
+        return None
+    timelines = root / "timelines"
+    if not timelines.is_dir():
+        return None
+    try:
+        target = source.recorded_at.timestamp()
+    except (ValueError, OSError):
+        return None
+    best = None
+    best_delta = 600.0
+    for path in timelines.glob(f"timeline_{source.game_id}*.json"):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            timestamp = float(data.get("daterecorded", 0))
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+        delta = abs(timestamp - target)
+        if delta < best_delta:
+            best_delta = delta
+            best = path
+    return best
+
+
+def _delete_paths(source) -> list[Path]:
+    """要删除的内容：剪辑是整个目录；录像是各分片目录 + 对应 timeline。"""
+    if source.kind == KIND_CLIP and source.clip_dir is not None:
+        return [source.clip_dir]
+    paths = list(source.parts)
+    timeline = _recording_timeline(source)
+    if timeline is not None:
+        paths.append(timeline)
+    return paths
 
 
 def _download_profiles() -> list[dict]:
@@ -1058,6 +1217,7 @@ def serve(
     cache_dir: Path | None = None,
     cache_ttl: float = 600.0,
     cache_max: int = 5 * 1024**3,
+    trash_dir: Path | None = None,
 ) -> int:
     from .util import raise_nofile_limit
 
@@ -1065,7 +1225,9 @@ def serve(
     cache_root = cache_dir or default_cache_dir()
     download_cache = DownloadCache(cache_root, ttl=cache_ttl, max_bytes=cache_max)
     download_cache.cleanup()
-    Handler.state = AppState(default_user, default_out, token, download_cache)
+    trash_root = trash_dir or default_trash_dir()
+    trash = Trash(trash_root)
+    Handler.state = AppState(default_user, default_out, token, download_cache, trash)
 
     try:
         httpd = ThreadingHTTPServer((host, port), Handler)
@@ -1088,6 +1250,7 @@ def serve(
         print(f"  地址：http://{host}:{port}/{query}")
     print(f"  输出：{default_out}")
     print(f"  下载缓存：{cache_root}（TTL {int(cache_ttl/60)} 分钟，上限 {cache_max//1024**3}GB）")
+    print(f"  回收站：{trash_root}")
     if host not in ("127.0.0.1", "localhost"):
         if token:
             print("  已启用访问令牌，访问时需带 ?token=…")

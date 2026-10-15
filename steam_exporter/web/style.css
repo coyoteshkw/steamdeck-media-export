@@ -252,7 +252,7 @@ img.game-thumb { display: block; }
 .group-items { background: #10131a; }
 .item-row {
   display: grid;
-  grid-template-columns: 22px 68px 150px 62px 80px minmax(0, 1fr) 88px 36px;
+  grid-template-columns: 22px 68px 150px 62px 80px minmax(0, 1fr) 88px 76px;
   gap: 10px;
   align-items: center;
   padding: 6px 12px 6px 42px;
@@ -272,6 +272,7 @@ img.game-thumb { display: block; }
   position: sticky;
   right: 0;
   display: flex;
+  gap: 6px;
   justify-content: flex-end;
   background: #10131a;
   padding-left: 8px;
@@ -295,6 +296,30 @@ img.game-thumb { display: block; }
 }
 .icon-btn:hover { background: #2a3242; border-color: #333c4e; }
 .icon-btn:active { transform: translateY(1px); }
+.icon-btn.danger { color: var(--err); border-color: #4a2a2a; }
+.icon-btn.danger:hover { background: #3a2020; border-color: #5a3030; }
+
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .62);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  padding: 16px;
+}
+.modal-box {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  width: min(460px, 100%);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .6);
+}
+.modal-box h3 { margin: 0 0 10px; font-size: 16px; }
+.modal-body { color: var(--muted); font-size: 13px; line-height: 1.6; margin: 0 0 14px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
 
 .kind { font-size: 12px; padding: 1px 7px; border-radius: 6px; background: var(--card-2); border: 1px solid var(--border); white-space: nowrap; text-align: center; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .kind.clip { color: #7fd6a2; }
@@ -393,7 +418,7 @@ body.job-active .layout { padding-bottom: 96px; }
   .main { min-height: 60vh; }
   .groups { max-height: none; }
   .group-items { overflow-x: auto; }
-  .item-row { min-width: 700px; padding-left: 18px; gap: 8px; }
+  .item-row { min-width: 740px; padding-left: 18px; gap: 8px; }
   .checks { grid-template-columns: 1fr 1fr; }
   body.job-active .layout { padding-bottom: 150px; }
   .jobbar-main { flex-wrap: wrap; gap: 10px; }
@@ -417,7 +442,7 @@ body.job-active .layout { padding-bottom: 96px; }
   .group-head { gap: 8px; padding: 8px 10px; }
   .group-meta { font-size: 11px; }
   .item-row {
-    min-width: 680px;
+    min-width: 720px;
     padding: 7px 10px;
     gap: 6px;
     font-size: 12px;

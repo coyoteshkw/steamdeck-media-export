@@ -96,6 +96,18 @@
     </section>
 
     <section class="card">
+      <div class="card-title">删除与回收站</div>
+      <div class="stack">
+        <p class="hint">删除会把录像移到回收站，可恢复；建议<b>先关闭 Steam</b>。</p>
+        <div class="cache-row">
+          <span class="muted" id="trash-info">回收站：—</span>
+          <button class="btn small danger" id="trash-purge">清空</button>
+        </div>
+        <button class="btn small block" id="trash-restore">恢复全部</button>
+      </div>
+    </section>
+
+    <section class="card">
       <div class="card-title">筛选</div>
       <div class="stack">
         <label class="field">
@@ -139,6 +151,7 @@
       </label>
       <span class="spacer"></span>
       <span class="muted" id="list-info"></span>
+      <button class="btn danger" id="delete-selected" disabled>删除选中</button>
       <button class="btn" id="export-selected" disabled>导出选中</button>
       <button class="btn primary" id="export-all">导出全部匹配</button>
     </div>
@@ -167,6 +180,18 @@
     </div>
   </div>
 </section>
+
+<div class="modal" id="confirm-modal" hidden>
+  <div class="modal-box">
+    <h3 id="confirm-title">确认删除</h3>
+    <p id="confirm-body" class="modal-body"></p>
+    <label class="checkbox"><input type="checkbox" id="confirm-permanent"><span>彻底删除（不进回收站，不可恢复）</span></label>
+    <div class="modal-actions">
+      <button class="btn" id="confirm-cancel">取消</button>
+      <button class="btn danger" id="confirm-ok">删除</button>
+    </div>
+  </div>
+</div>
 
 <div class="toast" id="toast" hidden></div>
 

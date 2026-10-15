@@ -77,6 +77,8 @@ const state = {
   currentName: "",
   currentTotal: null,
   pendingDownload: null,
+  pendingDelete: null,
+  steamRunning: false,
   outDir: "",
 };
 
@@ -120,6 +122,8 @@ function applySummary(s) {
   }
   if (profile.options.length) profile.value = "fast";
   updateCacheInfo(s.cache);
+  state.steamRunning = !!s.steam_running;
+  updateTrashInfo(s.trash);
 
   const badge = el("ffmpeg-badge");
   if (s.ffmpeg) { badge.textContent = "ffmpeg 就绪"; badge.className = "badge ok"; }
@@ -152,6 +156,11 @@ function bindEvents() {
   el("reveal-output").addEventListener("click", revealOutput);
   el("toggle-log").addEventListener("click", () => setLogOpen(el("log").hidden));
   el("clear-cache").addEventListener("click", clearCache);
+  el("delete-selected").addEventListener("click", () => openDeleteConfirm(Array.from(state.selected)));
+  el("trash-restore").addEventListener("click", restoreTrash);
+  el("trash-purge").addEventListener("click", purgeTrash);
+  el("confirm-cancel").addEventListener("click", closeDeleteConfirm);
+  el("confirm-ok").addEventListener("click", confirmDelete);
 }
 
 function syncModeFields() {
@@ -377,6 +386,19 @@ function renderItemRow(item) {
     downloadItem(item);
   });
   action.appendChild(download);
+
+  const remove = document.createElement("button");
+  remove.className = "icon-btn danger";
+  remove.title = "删除该录制（默认移到回收站）";
+  remove.innerHTML =
+    '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" ' +
+    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 14h10l1-14"/></svg>';
+  remove.addEventListener("click", (event) => {
+    event.stopPropagation();
+    openDeleteConfirm([item.id]);
+  });
+  action.appendChild(remove);
   row.appendChild(action);
   return row;
 }
@@ -449,6 +471,103 @@ async function clearCache() {
   }
 }
 
+function updateTrashInfo(trash) {
+  const node = el("trash-info");
+  if (!trash) {
+    node.textContent = "回收站：未启用";
+    return;
+  }
+  node.textContent = `回收站：${trash.count} 项 / ${fmtSize(trash.bytes)}`;
+  el("trash-restore").disabled = trash.count === 0;
+  el("trash-purge").disabled = trash.count === 0;
+}
+
+function openDeleteConfirm(ids) {
+  ids = (ids || []).filter(Boolean);
+  if (!ids.length) {
+    toast("请先勾选要删除的录制");
+    return;
+  }
+  const items = state.items.filter((item) => ids.includes(item.id));
+  const size = items.reduce((sum, item) => sum + (item.size || 0), 0);
+  const clips = items.filter((item) => item.kind === "clip").length;
+  const recordings = items.length - clips;
+  state.pendingDelete = ids;
+  el("confirm-permanent").checked = false;
+  let body = `将删除 ${items.length} 条录制（剪辑 ${clips}、录像 ${recordings}），约 ${fmtSize(size)}。`;
+  body += "默认移入回收站，可恢复。";
+  if (state.steamRunning) {
+    body += " ⚠ 检测到 Steam 正在运行，建议先关闭 Steam 再删除。";
+  }
+  el("confirm-body").textContent = body;
+  el("confirm-modal").hidden = false;
+}
+
+function closeDeleteConfirm() {
+  el("confirm-modal").hidden = true;
+  state.pendingDelete = null;
+}
+
+async function confirmDelete() {
+  const ids = state.pendingDelete;
+  if (!ids || !ids.length) return;
+  const permanent = el("confirm-permanent").checked;
+  const button = el("confirm-ok");
+  button.disabled = true;
+  try {
+    const res = await api("/api/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user: el("user-select").value || "auto",
+        ids,
+        permanent,
+      }),
+    });
+    closeDeleteConfirm();
+    toast(`${permanent ? "已彻底删除" : "已移入回收站"} ${res.deleted} 条（${fmtSize(res.bytes)}）`);
+    if (res.errors && res.errors.length) appendLog("删除提示：" + res.errors.join("；"));
+    state.selected.clear();
+    await loadRecordings();
+    const trash = await api("/api/trash");
+    updateTrashInfo(trash.stats);
+  } catch (err) {
+    toast("删除失败：" + err.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function restoreTrash() {
+  try {
+    const res = await api("/api/trash/restore", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ all: true }),
+    });
+    updateTrashInfo(res.stats);
+    toast(`已恢复 ${res.restored} 项`);
+    await loadRecordings();
+  } catch (err) {
+    toast("恢复失败：" + err.message);
+  }
+}
+
+async function purgeTrash() {
+  if (!window.confirm("彻底清空回收站？此操作不可恢复。")) return;
+  try {
+    const res = await api("/api/trash/purge", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ all: true }),
+    });
+    updateTrashInfo(res.stats);
+    toast(`已清空回收站（释放 ${fmtSize(res.freed)}）`);
+  } catch (err) {
+    toast("清空失败：" + err.message);
+  }
+}
+
 function span(className, text) {
   const node = document.createElement("span");
   node.className = className;
@@ -496,6 +615,7 @@ function refreshAllChecks() {
 function updateSelectionInfo() {
   el("selection-info").textContent = `已选 ${state.selected.size} 条`;
   el("export-selected").disabled = state.selected.size === 0;
+  el("delete-selected").disabled = state.selected.size === 0;
 }
 
 function updateGroupSummary(group, node) {
