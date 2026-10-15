@@ -41,6 +41,7 @@ class Source:
     timeline: Path | None = None
     clip_dir: Path | None = None
     user: str = ""
+    playable: bool = True
 
     @property
     def kind_cn(self) -> str:
@@ -77,6 +78,7 @@ class Source:
             "size": self.size_bytes,
             "title": self.title,
             "user": self.user,
+            "playable": self.playable,
         }
         if include_parts:
             data["parts"] = [str(p) for p in self.parts]

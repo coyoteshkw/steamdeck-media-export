@@ -13,6 +13,7 @@ from steam_exporter.exporter import (
     _init_video_size,
     _merge_stream_files,
     build_ffmpeg_args,
+    build_limited_stream_input,
     build_stream_input,
     render_relative_path,
     resolve_output_path,
@@ -135,7 +136,6 @@ class TestBuildStreamInput(unittest.TestCase):
             self.assertTrue(Path(first).is_symlink())
 
     def test_merge_stream_files(self):
-        """分片过多时的兜底：逐字节合并为单文件。"""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             files = []
@@ -146,6 +146,18 @@ class TestBuildStreamInput(unittest.TestCase):
             merged = Path(_merge_stream_files(files, root / "out", 0))
             self.assertTrue(merged.is_file())
             self.assertEqual(merged.read_bytes(), b"\x00\x01\x02")
+
+    def test_limited_stream_input_caps_chunks(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            part = Path(tmp) / "part"
+            part.mkdir()
+            (part / "init-stream0.m4s").write_bytes(b"init")
+            for i in range(1, 51):
+                (part / f"chunk-stream0-{i:05d}.m4s").write_bytes(b"x")
+            spec = build_limited_stream_input([part], 0, 30)
+            files = spec.removeprefix("concat:").split("|")
+            self.assertTrue(files[0].endswith("init-stream0.m4s"))
+            self.assertLessEqual(len(files) - 1, 12)  # 30/3+2
 
 
 class TestCorruptionRecovery(unittest.TestCase):

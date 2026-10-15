@@ -165,6 +165,10 @@ function bindEvents() {
   el("preview-modal").addEventListener("click", (event) => {
     if (event.target.id === "preview-modal") closePreview();
   });
+  el("play-close").addEventListener("click", closePlay);
+  el("play-modal").addEventListener("click", (event) => {
+    if (event.target.id === "play-modal") closePlay();
+  });
 }
 
 function syncModeFields() {
@@ -393,6 +397,19 @@ function renderItemRow(item) {
 
   const action = document.createElement("div");
   action.className = "item-action";
+  if (item.playable !== false) {
+    const play = document.createElement("button");
+    play.className = "icon-btn";
+    play.title = "在线播放（最多前 5 分钟）";
+    play.innerHTML =
+      '<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" stroke="none">' +
+      '<path d="M8 5v14l11-7z"/></svg>';
+    play.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openPlay(item);
+    });
+    action.appendChild(play);
+  }
   const download = document.createElement("button");
   download.className = "icon-btn";
   download.title = "下载到本机（不在 Deck 上保存）";
@@ -464,6 +481,35 @@ function closePreview() {
   video.removeAttribute("src");
   video.load();
   el("preview-modal").hidden = true;
+}
+
+function openPlay(item) {
+  const user = el("user-select").value || "auto";
+  el("play-title").textContent = `${item.game} · ${item.recorded_display}`;
+  const video = el("play-video");
+  const hint = el("play-hint");
+  hint.hidden = false;
+  hint.textContent =
+    item.duration_s && item.duration_s > 300
+      ? "正在加载…（长录像只播放前 5 分钟）"
+      : "正在加载…";
+  video.src = withToken(
+    `/api/play/${encodeURIComponent(item.id)}?user=${encodeURIComponent(user)}`);
+  video.load();
+  video.onloadeddata = () => { hint.hidden = true; };
+  video.onerror = () => {
+    hint.hidden = false;
+    hint.textContent = "无法在线播放（录制可能损坏）";
+  };
+  el("play-modal").hidden = false;
+}
+
+function closePlay() {
+  const video = el("play-video");
+  video.pause();
+  video.removeAttribute("src");
+  video.load();
+  el("play-modal").hidden = true;
 }
 
 function downloadItem(item) {

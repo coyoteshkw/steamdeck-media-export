@@ -255,7 +255,7 @@ img.game-thumb { display: block; }
 .group-items { background: #10131a; }
 .item-row {
   display: grid;
-  grid-template-columns: 22px 64px 68px 150px 62px 80px minmax(0, 1fr) 88px 76px;
+  grid-template-columns: 22px 64px 68px 150px 62px 80px minmax(0, 1fr) 88px 110px;
   gap: 10px;
   align-items: center;
   padding: 6px 12px 6px 42px;
@@ -438,7 +438,7 @@ body.job-active .layout { padding-bottom: 96px; }
   .main { min-height: 60vh; }
   .groups { max-height: none; }
   .group-items { overflow-x: auto; }
-  .item-row { min-width: 810px; padding-left: 18px; gap: 8px; }
+  .item-row { min-width: 844px; padding-left: 18px; gap: 8px; }
   .checks { grid-template-columns: 1fr 1fr; }
   body.job-active .layout { padding-bottom: 150px; }
   .jobbar-main { flex-wrap: wrap; gap: 10px; }
@@ -462,7 +462,7 @@ body.job-active .layout { padding-bottom: 96px; }
   .group-head { gap: 8px; padding: 8px 10px; }
   .group-meta { font-size: 11px; }
   .item-row {
-    min-width: 790px;
+    min-width: 824px;
     padding: 7px 10px;
     gap: 6px;
     font-size: 12px;

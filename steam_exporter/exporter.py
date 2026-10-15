@@ -354,6 +354,40 @@ def build_stream_input(
     return _merge_stream_files(files, Path(link_root), stream_index)
 
 
+def build_limited_stream_input(
+    parts: list[Path],
+    stream_index: int,
+    max_seconds: float,
+    link_root: Path | None = None,
+) -> str | None:
+    """只取前 ``max_seconds`` 秒所需的分片（在线播放用，不全读长录像）。
+
+    Steam 录像按 3 秒分片，因此限制分片数量即可限制时长，读取量很小。
+    """
+    max_chunks = max(1, int(max_seconds // 3) + 2)
+    files: list[Path] = []
+    count = 0
+    for part in parts:
+        init = part / f"init-stream{stream_index}.m4s"
+        if _init_present(init):
+            files.append(init)
+        for chunk in sorted(part.glob(f"chunk-stream{stream_index}-*.m4s")):
+            try:
+                if chunk.stat().st_size == 0:
+                    continue
+            except OSError:
+                continue
+            files.append(chunk)
+            count += 1
+            if count >= max_chunks:
+                break
+        if count >= max_chunks:
+            break
+    if not files:
+        return None
+    return _concat_spec(files)
+
+
 def find_vaapi_device() -> str | None:
     preferred = Path("/dev/dri/renderD128")
     if preferred.exists():

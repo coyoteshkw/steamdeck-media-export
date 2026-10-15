@@ -31,6 +31,7 @@ from .exporter import (
     ExportOptions,
     Exporter,
     build_ffmpeg_args,
+    build_limited_stream_input,
     find_vaapi_device,
 )
 from .library import (
@@ -389,6 +390,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._handle_thumb(path[len("/api/thumb/") :], query)
         if path.startswith("/api/preview/"):
             return self._handle_preview(path[len("/api/preview/") :], query)
+        if path.startswith("/api/play/"):
+            return self._handle_play(path[len("/api/play/") :], query)
         if path.startswith("/api/icon/"):
             return self._handle_icon(path[len("/api/icon/"):])
         if path == "/api/jobs":
@@ -809,6 +812,76 @@ class Handler(BaseHTTPRequestHandler):
         cache.touch(key, "mp4")
         filename = download_filename(source).replace(".mp4", " 预览.mp4")
         self._serve_file(path, filename, attachment=False)
+
+    def _handle_play(self, source_id: str, query: dict) -> None:
+        """在线播放：流式 remux，最多前 5 分钟；不转码、不落盘。"""
+        source = self._find_source(source_id, query)
+        if source is None:
+            return self._error(404, "找不到录制")
+        if not source.playable:
+            return self._error(409, "该录制头部损坏，无法在线播放")
+        duration = source.duration_s or 300.0
+        limit = min(300.0, duration)
+        self._stream_playback(source, limit)
+
+    def _stream_playback(self, source, limit_seconds: float) -> None:
+        link_root = Path(
+            tempfile.mkdtemp(prefix="steamexport-play-", dir=tempfile.gettempdir())
+        )
+        try:
+            video = build_limited_stream_input(source.parts, 0, limit_seconds, link_root)
+            if video is None:
+                shutil.rmtree(link_root, ignore_errors=True)
+                return self._error(409, "没有可播放的视频分片")
+            audio = build_limited_stream_input(source.parts, 1, limit_seconds, link_root)
+        except Exception as exc:  # noqa: BLE001
+            shutil.rmtree(link_root, ignore_errors=True)
+            return self._error(500, str(exc))
+
+        args = ["-i", video]
+        if audio:
+            args += ["-i", audio]
+        args += ["-map", "0:v:0"]
+        if audio:
+            args += ["-map", "1:a:0"]
+        args += ["-c", "copy"]
+        args += ["-t", f"{limit_seconds:.3f}"]
+        args += [
+            "-movflags",
+            "frag_keyframe+empty_moov+default_base_moof",
+            "-f",
+            "mp4",
+            "pipe:1",
+        ]
+        cmd = ["ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error", *args]
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "video/mp4")
+            self.send_header("Content-Disposition", "inline")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self._responded = True
+            assert process.stdout is not None
+            while True:
+                chunk = process.stdout.read(262144)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            process.kill()
+        finally:
+            if process.stdout is not None:
+                process.stdout.close()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+            if process.stderr is not None:
+                process.stderr.close()
+            shutil.rmtree(link_root, ignore_errors=True)
 
     def _handle_icon(self, appid: str) -> None:
         art = find_game_art(appid.strip())

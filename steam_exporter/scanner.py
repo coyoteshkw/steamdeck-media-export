@@ -147,6 +147,11 @@ def _make_source(
     app_id = appid_from_game_id(game_id) or game_id
     game = resolver.name_for(game_id) or f"未知应用 {app_id}"
     size = sum(dir_size(part) for part in parts)
+    playable = any(
+        (part / "init-stream0.m4s").is_file()
+        and (part / "init-stream0.m4s").stat().st_size > 0
+        for part in parts
+    )
     return Source(
         kind=kind,
         source_id=source_id,
@@ -164,6 +169,7 @@ def _make_source(
         timeline=timeline,
         clip_dir=clip_dir,
         user=user,
+        playable=playable,
     )
 
 
