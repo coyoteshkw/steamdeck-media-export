@@ -1051,7 +1051,7 @@ class Handler(BaseHTTPRequestHandler):
         if not target.is_file():
             return self._error(404, "未找到")
         content_type = CONTENT_TYPES.get(target.suffix, "application/octet-stream")
-        self._send_bytes(target.read_bytes(), content_type)
+        self._send_bytes(target.read_bytes(), content_type, cache="no-cache")
 
 
 def download_filename(source) -> str:
