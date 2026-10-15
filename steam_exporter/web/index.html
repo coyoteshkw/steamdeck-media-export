@@ -240,8 +240,8 @@
     <section class="card">
       <div class="card-title">批量下载</div>
       <div class="stack">
-        <p class="hint">逐张下载（不打包），浏览器可能提示是否允许下载多个文件。</p>
-        <button class="btn small block" id="shot-download-all">下载全部筛选结果</button>
+        <p class="hint">打包成一个 ZIP 下载（原图，不压缩）。单选 / 多选仍是逐张下载。</p>
+        <button class="btn small block" id="shot-download-all">打包下载全部结果</button>
         <span class="muted" id="shot-total-line">—</span>
       </div>
     </section>
@@ -257,10 +257,14 @@
   <main class="main">
     <div class="toolbar" id="shot-toolbar">
       <button class="btn small" id="shot-back" hidden>← 返回</button>
-      <span class="shot-title" id="shot-title">全部游戏</span>
+      <span class="shot-title" id="shot-title">全部截图</span>
       <span class="muted" id="shot-info"></span>
       <span class="spacer"></span>
-      <button class="btn small" id="shot-download-page" hidden>下载本页</button>
+      <div class="tabs" id="shot-modes">
+        <button class="tab active" data-mode="all">全部</button>
+        <button class="tab" data-mode="games">按分类</button>
+      </div>
+      <button class="btn small" id="shot-download-page" hidden>打包下载</button>
       <button class="btn small" id="shot-select-toggle" hidden>选择</button>
       <button class="btn small" id="shot-download-selected" hidden disabled>下载选中</button>
       <button class="btn danger small" id="shot-delete-selected" hidden disabled>删除选中</button>

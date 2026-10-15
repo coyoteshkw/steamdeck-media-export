@@ -413,6 +413,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._handle_shot_games(query)
         if path == "/api/screenshots/list":
             return self._handle_shot_list(query)
+        if path == "/api/screenshots/zip":
+            return self._handle_shot_zip(query)
         if path.startswith("/api/screenshot/thumb/"):
             return self._handle_shot_thumb(
                 unquote(path[len("/api/screenshot/thumb/") :]), query
@@ -997,6 +999,51 @@ class Handler(BaseHTTPRequestHandler):
             }
         )
 
+    def _handle_shot_zip(self, query: dict) -> None:
+        """把筛选出的截图打包成 ZIP 流式下载（不压缩、不落盘）。"""
+        user = query.get("user", ["auto"])[0]
+        filters = self._shot_filters(query)
+        shots = filter_screenshots(self.state.screenshots(user), filters)
+        shots = sort_screenshots(shots, newest_first=True)
+        if not shots:
+            return self._error(404, "没有可打包的截图")
+        self._stream_zip(shots)
+
+    def _stream_zip(self, shots) -> None:
+        import zipfile
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/zip")
+        self.send_header("Content-Disposition", _content_disposition("Steam截屏.zip"))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self._responded = True
+        used: set[str] = set()
+        try:
+            # JPEG 已压过，ZIP_STORED（不压缩）几乎不耗 CPU；wfile 不可 seek，
+            # zipfile 会自动用 data descriptor，产出标准 ZIP
+            with zipfile.ZipFile(
+                self.wfile, "w", zipfile.ZIP_STORED, allowZip64=True
+            ) as archive:
+                for shot in shots:
+                    name = screenshot_zip_name(shot)
+                    candidate = name
+                    base, dot, ext = name.rpartition(".")
+                    index = 1
+                    while candidate in used:
+                        candidate = (
+                            f"{base} ({index}).{ext}" if dot else f"{base} ({index})"
+                        )
+                        index += 1
+                    used.add(candidate)
+                    try:
+                        archive.write(shot.path, candidate)
+                    except OSError:
+                        continue
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
     def _find_screenshot(self, shot_id: str, query: dict):
         user = query.get("user", ["auto"])[0]
         return next(
@@ -1258,6 +1305,14 @@ def screenshot_filename(shot) -> str:
     stamp = shot.recorded_at.astimezone().strftime("%Y-%m-%d %H-%M-%S")
     ext = shot.path.suffix or ".jpg"
     return f"{game} - {stamp}{ext}"
+
+
+def screenshot_zip_name(shot) -> str:
+    """ZIP 包内的路径：``游戏名/时间.jpg``。"""
+    game = sanitize_value(shot.game or "screenshot") or "screenshot"
+    stamp = shot.recorded_at.astimezone().strftime("%Y-%m-%d %H-%M-%S")
+    ext = shot.path.suffix or ".jpg"
+    return f"{game}/{stamp}{ext}"
 
 
 def _shot_count(userdata: Path) -> int:

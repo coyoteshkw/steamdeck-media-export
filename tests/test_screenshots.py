@@ -15,6 +15,7 @@ from steam_exporter.screenshots import (
     scan_screenshots,
     sort_screenshots,
 )
+from steam_exporter.server import screenshot_filename, screenshot_zip_name
 from steam_exporter.steam import NameResolver
 from steam_exporter.trash import Trash
 
@@ -170,6 +171,15 @@ class TestTrashIntegration(ShotFixture):
         trash.restore(entry["id"])
         self.assertTrue(original.exists())
         self.assertTrue(thumb.exists())
+
+
+class TestZipName(ShotFixture):
+    def test_zip_and_file_names(self):
+        shot = next(s for s in self.scan() if s.game_id == "1030300")
+        zip_name = screenshot_zip_name(shot)
+        self.assertTrue(zip_name.startswith("测试游戏/"))
+        self.assertTrue(zip_name.endswith(".jpg"))
+        self.assertIn(" - ", screenshot_filename(shot))
 
 
 if __name__ == "__main__":

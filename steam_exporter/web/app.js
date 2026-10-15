@@ -83,14 +83,18 @@ const state = {
   // 截图视图
   view: "recordings",
   shotLoaded: false,
+  shotMode: "all",
   shotGames: [],
   shotItems: [],
   shotSelected: new Set(),
   shotGame: null,
   shotGameName: "",
   shotSelectMode: false,
+  shotRenderCount: 0,
   viewerIndex: -1,
 };
+
+const SHOT_BATCH = 200;
 
 // ---------------------------------------------------------------------------
 // 初始化
@@ -192,8 +196,11 @@ function bindEvents() {
     if (event.key === "Enter") applyShotFilters();
   });
   el("shot-back").addEventListener("click", showShotGames);
+  for (const tab of document.querySelectorAll("#shot-modes .tab")) {
+    tab.addEventListener("click", () => switchShotMode(tab.dataset.mode));
+  }
   el("shot-select-toggle").addEventListener("click", () => setShotSelectMode(!state.shotSelectMode));
-  el("shot-download-page").addEventListener("click", () => downloadShots(state.shotItems, true));
+  el("shot-download-page").addEventListener("click", downloadShotPage);
   el("shot-download-all").addEventListener("click", downloadAllShots);
   el("shot-download-selected").addEventListener("click", () => downloadShots(selectedShotItems()));
   el("shot-delete-selected").addEventListener("click", () =>
@@ -1100,8 +1107,7 @@ function shotFilterParams() {
 }
 
 function applyShotFilters() {
-  if (state.shotGame) loadShotItems();
-  else loadScreenshots();
+  loadScreenshots();
 }
 
 function resetShotFilters() {
@@ -1112,21 +1118,52 @@ function resetShotFilters() {
   applyShotFilters();
 }
 
+function switchShotMode(mode) {
+  state.shotMode = mode;
+  state.shotGame = null;
+  state.shotGameName = "";
+  state.shotRenderCount = 0;
+  setShotSelectMode(false);
+  for (const tab of document.querySelectorAll("#shot-modes .tab")) {
+    tab.classList.toggle("active", tab.dataset.mode === mode);
+  }
+  loadScreenshots();
+}
+
 async function loadScreenshots() {
   const user = el("user-select").value || "auto";
   const params = shotFilterParams();
   el("shot-info").textContent = "加载中…";
   try {
-    const [summary, games] = await Promise.all([
-      api(`/api/screenshots/summary?user=${encodeURIComponent(user)}`),
-      api("/api/screenshots/games?" + params.toString()),
-    ]);
+    const summary = await api(
+      `/api/screenshots/summary?user=${encodeURIComponent(user)}`);
     applyShotSummary(summary);
-    state.shotGames = games.games || [];
-    renderShotGames(games);
+    if (state.shotGame) {
+      await loadShotItems();
+    } else if (state.shotMode === "games") {
+      const games = await api("/api/screenshots/games?" + params.toString());
+      state.shotGames = games.games || [];
+      renderShotGames(games);
+    } else {
+      const data = await api("/api/screenshots/list?" + params.toString());
+      state.shotItems = data.items || [];
+      renderShotAll(data);
+    }
   } catch (err) {
     el("shot-info").textContent = "加载失败：" + err.message;
   }
+}
+
+function renderShotAll(data) {
+  el("shot-games").hidden = true;
+  el("shot-grid").hidden = false;
+  el("shot-back").hidden = true;
+  el("shot-title").textContent = "全部截图";
+  el("shot-download-page").hidden = false;
+  el("shot-select-toggle").hidden = false;
+  el("shot-info").textContent = `${data.count} 张 · ${fmtSize(data.total_size)}`;
+  state.shotRenderCount = SHOT_BATCH;
+  renderShotGrid(true);
 }
 
 function applyShotSummary(summary) {
@@ -1159,14 +1196,20 @@ function renderShotGames(data) {
 }
 
 function renderShotGameCard(game) {
-  const card = document.createElement("button");
-  card.type = "button";
+  const card = document.createElement("div");
   card.className = "shot-game";
+  card.setAttribute("role", "button");
+  card.tabIndex = 0;
+
+  const thumb = document.createElement("div");
+  thumb.className = "shot-game-thumb";
   const art = document.createElement("img");
   art.loading = "lazy";
   art.alt = "";
   art.src = withToken(`/api/icon/${encodeURIComponent(game.appid)}`);
   art.addEventListener("error", () => { art.style.visibility = "hidden"; });
+  thumb.appendChild(art);
+
   const meta = document.createElement("div");
   meta.className = "shot-game-meta";
   const name = document.createElement("span");
@@ -1176,8 +1219,15 @@ function renderShotGameCard(game) {
   sub.className = "shot-game-sub";
   sub.textContent = `${game.count} 张 · ${fmtSize(game.bytes)}`;
   meta.append(name, sub);
-  card.append(art, meta);
+
+  card.append(thumb, meta);
   card.addEventListener("click", () => openShotGame(game.gameid, game.game));
+  card.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      openShotGame(game.gameid, game.game);
+    }
+  });
   return card;
 }
 
@@ -1201,26 +1251,52 @@ async function showShotGames() {
 
 async function loadShotItems() {
   const params = shotFilterParams();
-  if (state.shotGame) params.set("game", state.shotGame);
+  params.set("game", state.shotGame);
+  el("shot-back").hidden = false;
+  el("shot-title").textContent = state.shotGameName || "游戏截图";
+  el("shot-download-page").hidden = false;
+  el("shot-select-toggle").hidden = false;
   el("shot-info").textContent = "加载中…";
   try {
     const data = await api("/api/screenshots/list?" + params.toString());
     state.shotItems = data.items || [];
     el("shot-info").textContent = `${data.count} 张 · ${fmtSize(data.total_size)}`;
-    renderShotGrid();
+    renderShotGrid(true);
   } catch (err) {
     el("shot-info").textContent = "加载失败：" + err.message;
   }
 }
 
-function renderShotGrid() {
+function renderShotGrid(reset = true) {
   el("shot-games").hidden = true;
   const grid = el("shot-grid");
   grid.hidden = false;
   grid.classList.toggle("selecting", state.shotSelectMode);
-  grid.innerHTML = "";
+  if (reset) {
+    for (const img of grid.querySelectorAll("img")) {
+      if (thumbObserver) thumbObserver.unobserve(img);
+    }
+    grid.innerHTML = "";
+    state.shotRenderCount = SHOT_BATCH;
+  }
   el("shot-empty").hidden = state.shotItems.length > 0;
-  state.shotItems.forEach((item, index) => grid.appendChild(renderShotTile(item, index)));
+  const total = state.shotItems.length;
+  const end = Math.min(state.shotRenderCount, total);
+  const oldMore = grid.querySelector(".shot-more");
+  if (oldMore) oldMore.remove();
+  for (let index = grid.children.length; index < end; index++) {
+    grid.appendChild(renderShotTile(state.shotItems[index], index));
+  }
+  if (end < total) {
+    const more = document.createElement("button");
+    more.className = "btn block shot-more";
+    more.textContent = `加载更多（已显示 ${end} / ${total}）`;
+    more.addEventListener("click", () => {
+      state.shotRenderCount += SHOT_BATCH;
+      renderShotGrid(false);
+    });
+    grid.appendChild(more);
+  }
   updateShotSelection();
 }
 
@@ -1314,17 +1390,32 @@ async function downloadShots(items, confirmLarge = false) {
   }
 }
 
+function downloadShotZip(extra = {}) {
+  const params = shotFilterParams();
+  for (const [key, value] of Object.entries(extra)) {
+    if (value) params.set(key, value);
+  }
+  triggerUrl(withToken("/api/screenshots/zip?" + params.toString()));
+}
+
 async function downloadAllShots() {
   try {
     const data = await api("/api/screenshots/list?" + shotFilterParams().toString());
     if (!data.count) { toast("没有可下载的截图"); return; }
     if (!window.confirm(
-      `将逐张下载 ${data.count} 张（约 ${fmtSize(data.total_size)}）。\n` +
-      "浏览器可能会提示是否允许下载多个文件。继续？")) return;
-    await downloadShots(data.items);
+      `打包 ${data.count} 张（约 ${fmtSize(data.total_size)}）为 ZIP 下载？`)) return;
+    downloadShotZip();
   } catch (err) {
     toast("下载失败：" + err.message);
   }
+}
+
+function downloadShotPage() {
+  const items = state.shotItems || [];
+  if (!items.length) { toast("没有可下载的截图"); return; }
+  const size = items.reduce((sum, item) => sum + (item.size || 0), 0);
+  if (!window.confirm(`打包 ${items.length} 张（约 ${fmtSize(size)}）为 ZIP 下载？`)) return;
+  downloadShotZip(state.shotGame ? { game: state.shotGame } : {});
 }
 
 function openViewer(index) {

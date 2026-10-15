@@ -463,8 +463,8 @@ body.job-active .layout { padding-bottom: 96px; }
   padding: 2px;
 }
 .shot-game {
-  display: flex;
-  flex-direction: column;
+  position: relative;
+  display: block;
   padding: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -478,12 +478,21 @@ body.job-active .layout { padding-bottom: 96px; }
 }
 .shot-game:hover { border-color: var(--accent); }
 .shot-game:active { transform: translateY(1px); }
-.shot-game img {
+.shot-game:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.shot-game-thumb {
+  position: relative;
   width: 100%;
-  aspect-ratio: 16 / 9;
+  padding-top: 56.25%; /* 16:9，用 padding 撑高，避免 <button>/flex 下图片高度塌陷 */
+  overflow: hidden;
+  background: linear-gradient(135deg, #2a3244, #1b212c);
+}
+.shot-game-thumb img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   object-fit: cover;
   display: block;
-  background: linear-gradient(135deg, #2a3244, #1b212c);
 }
 .shot-game-meta { padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .shot-game-name { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -499,6 +508,7 @@ body.job-active .layout { padding-bottom: 96px; }
   align-content: start;
   padding: 2px;
 }
+.shot-more { grid-column: 1 / -1; }
 .shot-tile {
   position: relative;
   aspect-ratio: 16 / 10;
