@@ -352,7 +352,42 @@ function renderItemRow(item) {
     row.classList.add(current.status);
   }
   row.appendChild(status);
+
+  const action = document.createElement("div");
+  action.className = "item-action";
+  const download = document.createElement("button");
+  download.className = "icon-btn";
+  download.title = "下载到本机（不在 Deck 上保存）";
+  download.innerHTML =
+    '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" ' +
+    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>';
+  download.addEventListener("click", (event) => {
+    event.stopPropagation();
+    downloadItem(item);
+  });
+  action.appendChild(download);
+  row.appendChild(action);
   return row;
+}
+
+function downloadItem(item) {
+  const params = new URLSearchParams();
+  params.set("user", el("user-select").value || "auto");
+  params.set("id", item.id);
+  params.set("mode", el("mode").value);
+  params.set("codec", el("codec").value);
+  params.set("crf", el("crf").value);
+  params.set("preset", el("preset").value);
+  params.set("scale", el("scale").value.trim());
+  params.set("trim", el("trim").checked ? "1" : "0");
+  if (TOKEN) params.set("token", TOKEN);
+  toast(`开始下载：${item.game}（${el("mode").value === "compress" ? "压缩" : "无损"}）`);
+  const link = document.createElement("a");
+  link.href = "/api/download?" + params.toString();
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
 }
 
 function span(className, text) {

@@ -6,13 +6,16 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
+import tempfile
 import threading
 import time
 import uuid
 from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 from . import __version__
 from .exporter import (
@@ -23,6 +26,7 @@ from .exporter import (
     VAAPI_CODECS,
     ExportOptions,
     Exporter,
+    build_ffmpeg_args,
     find_vaapi_device,
 )
 from .library import (
@@ -35,7 +39,7 @@ from .library import (
     sort_sources,
 )
 from .steam import find_steam_roots, find_userdata_dirs, primary_user
-from .util import find_tool
+from .util import find_tool, sanitize_value
 
 WEB_DIR = Path(__file__).parent / "web"
 
@@ -244,6 +248,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
+        self._responded = True
         self.wfile.write(body)
 
     def _send_bytes(self, body: bytes, content_type: str, status: int = 200) -> None:
@@ -291,7 +296,8 @@ class Handler(BaseHTTPRequestHandler):
         except BrokenPipeError:
             pass
         except Exception as exc:  # noqa: BLE001
-            self._error(500, str(exc))
+            if not getattr(self, "_responded", False):
+                self._error(500, str(exc))
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
@@ -319,6 +325,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._handle_summary()
         if path == "/api/recordings":
             return self._handle_recordings(query)
+        if path == "/api/download":
+            return self._handle_download(query)
         if path.startswith("/api/icon/"):
             return self._handle_icon(path[len("/api/icon/"):])
         if path == "/api/jobs":
@@ -400,6 +408,62 @@ class Handler(BaseHTTPRequestHandler):
             until=until,
             ids=ids,
         )
+
+    def _handle_download(self, query: dict) -> None:
+        user = query.get("user", ["auto"])[0]
+        source_id = query.get("id", [""])[0]
+        sources = self.state.sources(user)
+        source = next((s for s in sources if s.source_id == source_id), None)
+        if source is None:
+            return self._error(404, "找不到该录制")
+        payload = {k: v[0] for k, v in query.items() if v}
+        options = self._build_options(payload)
+        self._stream_download(source, options)
+
+    def _stream_download(self, source, options: ExportOptions) -> None:
+        """边转码边把结果推给浏览器，**不在 Deck 上落盘**（无导出文件、不写入清单）。"""
+        base = options.tmp_dir or Path(tempfile.gettempdir())
+        try:
+            base.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            base = Path(tempfile.gettempdir())
+        link_root = Path(tempfile.mkdtemp(prefix="steamexport-dl-", dir=str(base)))
+        try:
+            args = build_ffmpeg_args(source, options, None, link_root=link_root, streaming=True)
+        except Exception as exc:  # noqa: BLE001
+            shutil.rmtree(link_root, ignore_errors=True)
+            return self._error(400, str(exc))
+
+        filename = download_filename(source)
+        cmd = ["ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error"] + args
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "video/mp4")
+            self.send_header("Content-Disposition", _content_disposition(filename))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self._responded = True
+            assert process.stdout is not None
+            while True:
+                chunk = process.stdout.read(262144)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            process.kill()
+        finally:
+            if process.stdout is not None:
+                process.stdout.close()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+            if process.stderr is not None:
+                process.stderr.close()
+            shutil.rmtree(link_root, ignore_errors=True)
 
     def _handle_icon(self, appid: str) -> None:
         art = find_game_art(appid.strip())
@@ -570,6 +634,18 @@ class Handler(BaseHTTPRequestHandler):
             return self._error(404, "未找到")
         content_type = CONTENT_TYPES.get(target.suffix, "application/octet-stream")
         self._send_bytes(target.read_bytes(), content_type)
+
+
+def download_filename(source) -> str:
+    """下载到本机时用的文件名。"""
+    game = sanitize_value(source.game or "video") or "video"
+    stamp = source.recorded_at.astimezone().strftime("%Y-%m-%d %H-%M-%S")
+    return f"{game} - {stamp} - {source.kind_cn}.mp4"
+
+
+def _content_disposition(filename: str) -> str:
+    fallback = filename.encode("ascii", "ignore").decode().strip() or "video.mp4"
+    return f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quote(filename)}"
 
 
 def _run_job(job: Job) -> None:

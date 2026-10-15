@@ -368,9 +368,10 @@ def find_vaapi_device() -> str | None:
 def build_ffmpeg_args(
     source: Source,
     options: ExportOptions,
-    output: Path,
+    output: Path | None = None,
     link_root: Path | None = None,
     warnings: list[str] | None = None,
+    streaming: bool = False,
 ) -> list[str]:
     donor_video = None
     if not _has_init(source.parts, 0):
@@ -424,9 +425,14 @@ def build_ffmpeg_args(
     else:
         raise FFmpegError(f"未知导出模式：{options.mode}")
 
-    if options.faststart:
-        args += ["-movflags", "+faststart"]
-    args += ["-y", str(output)]
+    if streaming:
+        # 边转边发（下载到本机）：用分片 MP4，边生成边推给浏览器，不在 Deck 落盘
+        args += ["-movflags", "frag_keyframe+empty_moov+default_base_moof"]
+        args += ["-f", "mp4", "pipe:1"]
+    else:
+        if options.faststart:
+            args += ["-movflags", "+faststart"]
+        args += ["-y", str(output)]
     return args
 
 

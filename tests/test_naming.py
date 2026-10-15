@@ -269,6 +269,19 @@ class TestTrim(unittest.TestCase):
             args = build_ffmpeg_args(self._source(part, None), opts, Path(tmp) / "o.mp4")
             self.assertNotIn("-t", args)
 
+    def test_streaming_uses_fragmented_pipe(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            part = Path(tmp) / "part"
+            part.mkdir()
+            (part / "init-stream0.m4s").write_bytes(b"init")
+            (part / "chunk-stream0-00001.m4s").write_bytes(b"x")
+            opts = ExportOptions(out_dir=Path(tmp) / "out")
+            args = build_ffmpeg_args(self._source(part, 45.0), opts, None, streaming=True)
+            self.assertIn("pipe:1", args)
+            self.assertIn("frag_keyframe+empty_moov+default_base_moof", args)
+            self.assertNotIn("-y", args)
+            self.assertIn("-t", args)
+
 
 if __name__ == "__main__":
     unittest.main()
