@@ -277,7 +277,7 @@ def _parse_date(text: str):
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="steamexport",
-        description="从 SteamOS / Steam 游戏录制中导出剪辑与录像。",
+        description="从 SteamOS / Steam 导出游戏录制（剪辑/录像）与游戏截图。",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -345,7 +345,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_exp.set_defaults(func=cmd_export)
 
     # serve
-    p_serve = sub.add_parser("serve", help="启动网页管理界面")
+    p_serve = sub.add_parser("serve", help="启动网页管理界面（录像 + 截图）")
     p_serve.add_argument("--host", default="127.0.0.1",
                          help="监听地址（默认仅本机 127.0.0.1）")
     p_serve.add_argument("--port", type=int, default=8787, help="监听端口（默认 8787）")

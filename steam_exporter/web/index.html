@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0e1015">
 <meta name="color-scheme" content="dark">
-<title>Steam 录制导出</title>
+<title>Steam 媒体导出</title>
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -13,10 +13,14 @@
   <div class="brand">
     <span class="logo">🎬</span>
     <div class="brand-text">
-      <h1>Steam 录制导出</h1>
+      <h1>Steam 媒体导出</h1>
       <div class="sub" id="summary-line">加载中…</div>
     </div>
   </div>
+  <nav class="tabs" id="view-tabs">
+    <button class="tab active" data-view="recordings">录像</button>
+    <button class="tab" data-view="screenshots">截图</button>
+  </nav>
   <div class="appbar-right">
     <span id="ffmpeg-badge" class="badge"></span>
     <label class="field inline">
@@ -26,7 +30,7 @@
   </div>
 </header>
 
-<div class="layout">
+<div class="layout" id="view-recordings">
   <aside class="sidebar">
     <section class="card">
       <div class="card-title">导出设置</div>
@@ -212,6 +216,70 @@
     </div>
     <video id="play-video" controls autoplay playsinline></video>
     <div class="preview-hint" id="play-hint">正在加载…（长录像只播放前 5 分钟）</div>
+  </div>
+</div>
+
+<div class="layout" id="view-screenshots" hidden>
+  <aside class="sidebar">
+    <section class="card">
+      <div class="card-title">筛选截图</div>
+      <div class="stack">
+        <label class="field">
+          <span>游戏关键词 / 标题</span>
+          <input type="text" id="shot-q" placeholder="如 Hollow Knight">
+        </label>
+        <div class="row2">
+          <label class="field"><span>起始日期</span><input type="date" id="shot-since"></label>
+          <label class="field"><span>结束日期</span><input type="date" id="shot-until"></label>
+        </div>
+        <label class="checkbox"><input type="checkbox" id="shot-caption"><span>只显示有标题的</span></label>
+        <button class="btn primary block" id="shot-apply">应用筛选</button>
+        <button class="btn block" id="shot-reset">重置</button>
+      </div>
+    </section>
+    <section class="card">
+      <div class="card-title">批量下载</div>
+      <div class="stack">
+        <p class="hint">逐张下载（不打包），浏览器可能提示是否允许下载多个文件。</p>
+        <button class="btn small block" id="shot-download-all">下载全部筛选结果</button>
+        <span class="muted" id="shot-total-line">—</span>
+      </div>
+    </section>
+    <section class="card">
+      <div class="card-title">删除</div>
+      <div class="stack">
+        <p class="hint">删除会移入回收站，可恢复；建议<b>先关闭 Steam</b>。</p>
+        <span class="muted" id="shot-trash-info">回收站：—</span>
+      </div>
+    </section>
+  </aside>
+
+  <main class="main">
+    <div class="toolbar" id="shot-toolbar">
+      <button class="btn small" id="shot-back" hidden>← 返回</button>
+      <span class="shot-title" id="shot-title">全部游戏</span>
+      <span class="muted" id="shot-info"></span>
+      <span class="spacer"></span>
+      <button class="btn small" id="shot-download-page" hidden>下载本页</button>
+      <button class="btn small" id="shot-select-toggle" hidden>选择</button>
+      <button class="btn small" id="shot-download-selected" hidden disabled>下载选中</button>
+      <button class="btn danger small" id="shot-delete-selected" hidden disabled>删除选中</button>
+    </div>
+    <div class="shot-games" id="shot-games"></div>
+    <div class="shot-grid" id="shot-grid" hidden></div>
+    <div class="empty" id="shot-empty" hidden>没有匹配的截图。</div>
+  </main>
+</div>
+
+<div class="modal viewer" id="viewer-modal" hidden>
+  <button class="viewer-nav prev" id="viewer-prev" title="上一张">‹</button>
+  <img id="viewer-img" alt="">
+  <button class="viewer-nav next" id="viewer-next" title="下一张">›</button>
+  <div class="viewer-bar">
+    <span id="viewer-title"></span>
+    <span class="spacer"></span>
+    <button class="btn small" id="viewer-download">下载</button>
+    <button class="icon-btn" id="viewer-close" title="关闭">✕</button>
   </div>
 </div>
 

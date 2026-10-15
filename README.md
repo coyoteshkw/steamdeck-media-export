@@ -1,6 +1,7 @@
 # steam-recording-exporter
 
-从 **SteamOS / Steam 游戏录制（Game Recording）** 中批量导出「剪辑」与「录像」的小工具。
+从 **SteamOS / Steam** 中导出**游戏录制**（剪辑 / 录像）与**游戏截图**的小工具，
+自带网页管理界面，方便在手机、平板上浏览与下载。
 
 - 支持**无损导出**（`-c copy`，画质零损失、速度接近磁盘拷贝）
 - 支持**压缩导出**（libx264 / libx265 / SVT-AV1 / VAAPI 硬件编码，自定义 CRF、缩放）
@@ -8,6 +9,7 @@
 - 自动解析游戏名（含非 Steam 快捷方式）、录制时间、时长、大小
 - 自动合并 Steam 分段续写的后台录像（`xxx_0`、`xxx_1` …）
 - 清单去重：重复运行只导出新增内容
+- **截图图库**：按游戏分类浏览 Steam 截图，多选、逐张下载本机（手机友好）
 - 只依赖 **Python 标准库 + 系统 ffmpeg**，无需安装第三方包
 
 > 目标平台是 Steam Deck / SteamOS，但在任何有 Steam + ffmpeg 的 Linux 上都能用。
@@ -111,6 +113,22 @@
   - 只读取需要的前几个分片；录制头部损坏（`playable=false`）时**不显示播放按钮**
 - 「打开导出目录」直接调 `xdg-open`
 
+### 截图图库
+
+顶栏点「截图」切换到截图页（与录像页共用同一服务、Token 与局域网地址）：
+
+- **按游戏分类浏览**：游戏卡片（Steam 封面 + 张数 + 体积）→ 点进去看该游戏的缩略图网格
+- 缩略图直接用 Steam 已生成的 `thumbnails/`（~13KB/张），懒加载，手机很轻
+- 点缩略图看**大图**，可左右切换（也支持 `←` / `→` 键）；有标题的显示标题
+- **多选**：点「选择」进入选择模式，勾选后可「下载选中」或「删除选中」
+- **筛选**：游戏关键词 / 标题、日期范围、仅看有标题的
+- **下载**：逐张下载（不打包，手机浏览器一次只处理一个文件）；侧栏可
+  「下载全部筛选结果」，数量大时会二次确认
+- **删除**：与录像一样默认移入回收站，可恢复（建议先关闭 Steam）
+
+> 截图数据以**文件系统为准**（`760/remote/<gameid>/screenshots/`），`screenshots.vdf`
+> 只用于补充精确时间、尺寸与标题；Steam 正在运行时 vdf 可能只写入一半，工具会容错。
+
 ### 删除录制
 
 - 每条录制右侧的**垃圾桶按钮**，或勾选多条后点「删除选中」，即可删除录像 / 剪辑
@@ -167,6 +185,12 @@
 | POST | `/api/trash/restore` | 恢复全部 |
 | POST | `/api/trash/purge` | 清空回收站 |
 | GET | `/api/icon/{appid}` | 游戏图标（Steam 本地缓存） |
+| GET | `/api/screenshots/summary` | 截图总览（张数 / 游戏数 / 体积 / 回收站） |
+| GET | `/api/screenshots/games` | 按游戏分组的截图统计（支持筛选） |
+| GET | `/api/screenshots/list` | 截图列表（按游戏 / 日期 / 关键词 / 标题筛选） |
+| GET | `/api/screenshot/thumb/{id}` | 截图缩略图（Steam 已生成） |
+| GET | `/api/screenshot/full/{id}` | 截图原图（`?dl=1` 触发下载） |
+| POST | `/api/screenshots/delete` | 删除截图（默认移入回收站） |
 | POST | `/api/export` | 创建导出任务（`dry_run` 时直接返回计划） |
 | GET | `/api/jobs/{id}` | 任务状态快照 |
 | GET | `/api/jobs/{id}/events` | SSE 进度事件流 |
@@ -350,6 +374,7 @@ steam_exporter/
 ├── web/          # 网页前端（index.html / app.js / style.css，无构建步骤）
 ├── library.py    # 账号选择、扫描、过滤（CLI 与网页共用）
 ├── scanner.py    # 扫描 gamerecordings，解析目录名与 clip.pb
+├── screenshots.py# 扫描 Steam 截图（760/remote）+ screenshots.vdf 元数据
 ├── steam.py      # Steam 目录发现、VDF 解析、游戏名解析
 ├── exporter.py   # ffmpeg 命令构建、命名模板、清单去重、并发、事件回调
 ├── model.py      # Source 数据模型
@@ -373,6 +398,18 @@ bin/steamexport   # 便捷启动脚本
 - 进度条增加剩余时间（ETA）估计
 
 ## 更新日志
+
+### 0.3.0（2026-10-15）
+
+- **新增截图图库**：顶栏可在「录像 / 截图」两个视图间切换
+  - 按游戏分类浏览（Steam 封面 + 张数），点进去看缩略图网格
+  - 缩略图直接复用 Steam 已生成的 `thumbnails/`，懒加载；点开大图可左右切换
+  - 选择模式多选 → 下载选中 / 删除选中（删除默认进回收站，可恢复）
+  - 筛选：游戏关键词 / 标题、日期范围、仅看有标题的
+  - 逐张下载；侧栏「下载全部筛选结果」
+  - 后端新增 `screenshots.py`（扫描 + `screenshots.vdf` 元数据，读取容错）与
+    `/api/screenshots/*`、`/api/screenshot/*` 接口；测试增至 90 项
+  - 截图数据只读，**不修改 Steam 的 vdf**；删除仅移动原图 + 缩略图到回收站
 
 ### 0.2.15（2026-10-15）
 

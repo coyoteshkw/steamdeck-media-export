@@ -15,7 +15,7 @@ import uuid
 from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, quote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from . import __version__
 from .download_cache import DownloadCache
@@ -44,6 +44,15 @@ from .library import (
     sort_sources,
 )
 from .steam import find_steam_roots, find_userdata_dirs, primary_user
+from .screenshots import (
+    ShotFilters,
+    choose_screenshot_userdata,
+    filter_screenshots,
+    find_screenshot_userdata_dirs,
+    group_screenshots,
+    scan_screenshots,
+    sort_screenshots,
+)
 from .util import (
     ExportCancelled,
     FFmpegError,
@@ -255,11 +264,13 @@ class AppState:
         self.preview_cache = preview_cache
         self.jobs = Jobs()
         self._cache: dict[str, tuple[float, list]] = {}
+        self._shot_cache: dict[str, tuple[float, list]] = {}
         self._cache_lock = threading.Lock()
 
     def invalidate(self) -> None:
         with self._cache_lock:
             self._cache.clear()
+            self._shot_cache.clear()
 
     def sources(self, user: str | None, ttl: float = 30.0) -> list:
         key = user or "auto"
@@ -271,6 +282,18 @@ class AppState:
         data = collect_sources(key, self.resolver)
         with self._cache_lock:
             self._cache[key] = (now, data)
+        return data
+
+    def screenshots(self, user: str | None, ttl: float = 60.0) -> list:
+        key = user or "auto"
+        now = time.time()
+        with self._cache_lock:
+            entry = self._shot_cache.get(key)
+            if entry and now - entry[0] < ttl:
+                return entry[1]
+        data = scan_screenshots(key, self.resolver)
+        with self._cache_lock:
+            self._shot_cache[key] = (now, data)
         return data
 
 
@@ -358,6 +381,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._handle_export(payload)
             elif path == "/api/delete":
                 self._handle_delete(payload)
+            elif path == "/api/screenshots/delete":
+                self._handle_shot_delete(payload)
             elif path == "/api/trash/restore":
                 self._handle_trash_restore(payload)
             elif path == "/api/trash/purge":
@@ -382,6 +407,20 @@ class Handler(BaseHTTPRequestHandler):
             return self._handle_summary()
         if path == "/api/recordings":
             return self._handle_recordings(query)
+        if path == "/api/screenshots/summary":
+            return self._handle_shot_summary(query)
+        if path == "/api/screenshots/games":
+            return self._handle_shot_games(query)
+        if path == "/api/screenshots/list":
+            return self._handle_shot_list(query)
+        if path.startswith("/api/screenshot/thumb/"):
+            return self._handle_shot_thumb(
+                unquote(path[len("/api/screenshot/thumb/") :]), query
+            )
+        if path.startswith("/api/screenshot/full/"):
+            return self._handle_shot_full(
+                unquote(path[len("/api/screenshot/full/") :]), query
+            )
         if path == "/api/download":
             return self._handle_download(query)
         if path == "/api/download/file":
@@ -641,7 +680,14 @@ class Handler(BaseHTTPRequestHandler):
         filename = cache.get_name(key) or path.name
         self._serve_file(path, filename)
 
-    def _serve_file(self, path: Path, filename: str, attachment: bool = True) -> None:
+    def _serve_file(
+        self,
+        path: Path,
+        filename: str,
+        attachment: bool = True,
+        content_type: str = "video/mp4",
+        cache: str = "no-store",
+    ) -> None:
         """以普通文件方式发送（带 Content-Length 与 Range，可续传）。"""
         try:
             size = path.stat().st_size
@@ -652,7 +698,7 @@ class Handler(BaseHTTPRequestHandler):
         start, end = byte_range if partial else (0, size - 1)
         length = end - start + 1
         self.send_response(206 if partial else 200)
-        self.send_header("Content-Type", "video/mp4")
+        self.send_header("Content-Type", content_type)
         if attachment:
             self.send_header("Content-Disposition", _content_disposition(filename))
         else:
@@ -661,7 +707,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(length))
         if partial:
             self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cache-Control", cache)
         self.end_headers()
         self._responded = True
         try:
@@ -883,6 +929,151 @@ class Handler(BaseHTTPRequestHandler):
                 process.stderr.close()
             shutil.rmtree(link_root, ignore_errors=True)
 
+    # -- 截图 --
+    def _shot_filters(self, source) -> ShotFilters:
+        def one(name, default=None):
+            value = source.get(name)
+            if isinstance(value, list):
+                value = value[0] if value else None
+            return value if value is not None else default
+
+        games = source.get("game")
+        if isinstance(games, str):
+            game_ids = [games] if games else []
+        else:
+            game_ids = [str(g) for g in (games or []) if g]
+        return ShotFilters(
+            game_ids=game_ids,
+            since=_parse_date(one("since")),
+            until=_parse_date(one("until")),
+            q=(one("q") or "").strip(),
+            caption_only=str(one("caption") or "") in ("1", "true", "True"),
+        )
+
+    def _handle_shot_summary(self, query: dict) -> None:
+        dirs = find_screenshot_userdata_dirs()
+        main = primary_user()
+        users = [
+            {"id": d.name, "count": _shot_count(d), "primary": d.name == main}
+            for d in dirs
+        ]
+        chosen = choose_screenshot_userdata(query.get("user", ["auto"])[0])
+        effective = chosen[0].name if chosen else "auto"
+        shots = self.state.screenshots(effective)
+        self._send_json(
+            {
+                "count": len(shots),
+                "total_size": sum(s.size_bytes for s in shots),
+                "games": len({s.game_id for s in shots}),
+                "users": users,
+                "default_user": effective,
+                "trash": self.state.trash.stats() if self.state.trash else None,
+            }
+        )
+
+    def _handle_shot_games(self, query: dict) -> None:
+        user = query.get("user", ["auto"])[0]
+        filters = self._shot_filters(query)
+        shots = filter_screenshots(self.state.screenshots(user), filters)
+        self._send_json(
+            {
+                "count": len(group_screenshots(shots)),
+                "shots": len(shots),
+                "total_size": sum(s.size_bytes for s in shots),
+                "games": group_screenshots(shots),
+            }
+        )
+
+    def _handle_shot_list(self, query: dict) -> None:
+        user = query.get("user", ["auto"])[0]
+        filters = self._shot_filters(query)
+        shots = filter_screenshots(self.state.screenshots(user), filters)
+        shots = sort_screenshots(shots, newest_first=True)
+        self._send_json(
+            {
+                "count": len(shots),
+                "total_size": sum(s.size_bytes for s in shots),
+                "items": [s.to_dict() for s in shots],
+            }
+        )
+
+    def _find_screenshot(self, shot_id: str, query: dict):
+        user = query.get("user", ["auto"])[0]
+        return next(
+            (s for s in self.state.screenshots(user) if s.id == shot_id), None
+        )
+
+    def _handle_shot_thumb(self, shot_id: str, query: dict) -> None:
+        shot = self._find_screenshot(shot_id, query)
+        if shot is None:
+            return self._error(404, "找不到截图")
+        path = shot.thumbnail or shot.path
+        content_type = CONTENT_TYPES.get(path.suffix.lower(), "image/jpeg")
+        try:
+            body = path.read_bytes()
+        except OSError as exc:
+            return self._error(500, str(exc))
+        self._send_bytes(body, content_type, cache="public, max-age=86400")
+
+    def _handle_shot_full(self, shot_id: str, query: dict) -> None:
+        shot = self._find_screenshot(shot_id, query)
+        if shot is None:
+            return self._error(404, "找不到截图")
+        download = query.get("dl", ["0"])[0] in ("1", "true")
+        content_type = CONTENT_TYPES.get(shot.path.suffix.lower(), "image/jpeg")
+        self._serve_file(
+            shot.path,
+            screenshot_filename(shot),
+            attachment=download,
+            content_type=content_type,
+            cache="public, max-age=3600",
+        )
+
+    def _handle_shot_delete(self, payload: dict) -> None:
+        """删除截图：默认移入回收站（可恢复），permanent=true 则彻底删除。"""
+        user = payload.get("user") or "auto"
+        ids = payload.get("ids") or ([payload["id"]] if payload.get("id") else [])
+        permanent = bool(payload.get("permanent"))
+        trash = self.state.trash
+        shots = {s.id: s for s in self.state.screenshots(user)}
+        deleted = 0
+        removed = 0
+        results = []
+        errors = []
+        for shot_id in ids:
+            shot = shots.get(str(shot_id))
+            if shot is None:
+                errors.append(f"找不到 {shot_id}")
+                continue
+            paths = shot.delete_paths()
+            if permanent:
+                size = Trash.delete_permanently(paths)
+                results.append({"id": shot_id, "size": size})
+            else:
+                if trash is None:
+                    errors.append("回收站未启用")
+                    continue
+                entry = trash.move(shot, paths)
+                if entry is None:
+                    errors.append(f"{shot_id} 移入回收站失败")
+                    continue
+                size = entry["size"]
+                results.append({"id": shot_id, "size": size, "trash_id": entry["id"]})
+            deleted += 1
+            removed += size
+        self.state.invalidate()
+        self._send_json(
+            {
+                "ok": True,
+                "deleted": deleted,
+                "bytes": removed,
+                "permanent": permanent,
+                "results": results,
+                "errors": errors,
+                "steam_running": _steam_running(),
+            }
+        )
+
     def _handle_icon(self, appid: str) -> None:
         art = find_game_art(appid.strip())
         if art is None:
@@ -1059,6 +1250,25 @@ def download_filename(source) -> str:
     game = sanitize_value(source.game or "video") or "video"
     stamp = source.recorded_at.astimezone().strftime("%Y-%m-%d %H-%M-%S")
     return f"{game} - {stamp} - {source.kind_cn}.mp4"
+
+
+def screenshot_filename(shot) -> str:
+    """截图下载到本机时用的文件名。"""
+    game = sanitize_value(shot.game or "screenshot") or "screenshot"
+    stamp = shot.recorded_at.astimezone().strftime("%Y-%m-%d %H-%M-%S")
+    ext = shot.path.suffix or ".jpg"
+    return f"{game} - {stamp}{ext}"
+
+
+def _shot_count(userdata: Path) -> int:
+    remote = userdata / "760" / "remote"
+    total = 0
+    if remote.is_dir():
+        for game_dir in remote.iterdir():
+            shots_dir = game_dir / "screenshots"
+            if shots_dir.is_dir():
+                total += sum(1 for p in shots_dir.iterdir() if p.is_file())
+    return total
 
 
 def default_cache_dir() -> Path:
@@ -1395,7 +1605,7 @@ def serve(
         return 1
 
     query = f"?token={token}" if token else ""
-    print("Steam 录制导出 · 网页管理界面")
+    print("Steam 媒体导出 · 网页管理界面")
     if host in ("0.0.0.0", "::", ""):
         ips = _local_ips()
         if ips:

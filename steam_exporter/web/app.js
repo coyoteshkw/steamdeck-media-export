@@ -80,6 +80,16 @@ const state = {
   pendingDelete: null,
   steamRunning: false,
   outDir: "",
+  // 截图视图
+  view: "recordings",
+  shotLoaded: false,
+  shotGames: [],
+  shotItems: [],
+  shotSelected: new Set(),
+  shotGame: null,
+  shotGameName: "",
+  shotSelectMode: false,
+  viewerIndex: -1,
 };
 
 // ---------------------------------------------------------------------------
@@ -138,7 +148,7 @@ function applySummary(s) {
 
 function bindEvents() {
   el("apply-filter").addEventListener("click", loadRecordings);
-  el("user-select").addEventListener("change", loadRecordings);
+  el("user-select").addEventListener("change", onUserChange);
   el("mode").addEventListener("change", syncModeFields);
   el("sort-by").addEventListener("change", (e) => {
     state.sort = e.target.value;
@@ -169,6 +179,38 @@ function bindEvents() {
   el("play-modal").addEventListener("click", (event) => {
     if (event.target.id === "play-modal") closePlay();
   });
+
+  // 视图切换
+  for (const tab of document.querySelectorAll("#view-tabs .tab")) {
+    tab.addEventListener("click", () => switchView(tab.dataset.view));
+  }
+
+  // 截图视图
+  el("shot-apply").addEventListener("click", applyShotFilters);
+  el("shot-reset").addEventListener("click", resetShotFilters);
+  el("shot-q").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") applyShotFilters();
+  });
+  el("shot-back").addEventListener("click", showShotGames);
+  el("shot-select-toggle").addEventListener("click", () => setShotSelectMode(!state.shotSelectMode));
+  el("shot-download-page").addEventListener("click", () => downloadShots(state.shotItems, true));
+  el("shot-download-all").addEventListener("click", downloadAllShots);
+  el("shot-download-selected").addEventListener("click", () => downloadShots(selectedShotItems()));
+  el("shot-delete-selected").addEventListener("click", () =>
+    openDeleteConfirm(selectedShotItems().map((s) => s.id), "screenshot"));
+
+  // 大图查看器
+  el("viewer-close").addEventListener("click", closeViewer);
+  el("viewer-prev").addEventListener("click", () => viewerStep(-1));
+  el("viewer-next").addEventListener("click", () => viewerStep(1));
+  el("viewer-download").addEventListener("click", () => {
+    const item = state.shotItems[state.viewerIndex];
+    if (item) downloadShot(item);
+  });
+  el("viewer-modal").addEventListener("click", (event) => {
+    if (event.target.id === "viewer-modal") closeViewer();
+  });
+  document.addEventListener("keydown", onKeydown);
 }
 
 function syncModeFields() {
@@ -590,23 +632,31 @@ function updateTrashInfo(trash) {
   el("trash-purge").disabled = trash.count === 0;
 }
 
-function openDeleteConfirm(ids) {
+function openDeleteConfirm(ids, kind = "recording") {
   ids = (ids || []).filter(Boolean);
   if (!ids.length) {
-    toast("请先勾选要删除的录制");
+    toast(kind === "screenshot" ? "请先勾选要删除的截图" : "请先勾选要删除的录制");
     return;
   }
-  const items = state.items.filter((item) => ids.includes(item.id));
-  const size = items.reduce((sum, item) => sum + (item.size || 0), 0);
-  const clips = items.filter((item) => item.kind === "clip").length;
-  const recordings = items.length - clips;
-  state.pendingDelete = ids;
   el("confirm-permanent").checked = false;
-  let body = `将删除 ${items.length} 条录制（剪辑 ${clips}、录像 ${recordings}），约 ${fmtSize(size)}。`;
-  body += "默认移入回收站，可恢复。";
+  state.pendingDelete = { kind, ids };
+  let body;
+  if (kind === "screenshot") {
+    const items = state.shotItems.filter((item) => ids.includes(item.id));
+    const size = items.reduce((sum, item) => sum + (item.size || 0), 0);
+    body = `将删除 ${items.length} 张截图，约 ${fmtSize(size)}。默认移入回收站，可恢复。`;
+  } else {
+    const items = state.items.filter((item) => ids.includes(item.id));
+    const size = items.reduce((sum, item) => sum + (item.size || 0), 0);
+    const clips = items.filter((item) => item.kind === "clip").length;
+    const recordings = items.length - clips;
+    body = `将删除 ${items.length} 条录制（剪辑 ${clips}、录像 ${recordings}），约 ${fmtSize(size)}。`;
+    body += "默认移入回收站，可恢复。";
+  }
   if (state.steamRunning) {
     body += " ⚠ 检测到 Steam 正在运行，建议先关闭 Steam 再删除。";
   }
+  el("confirm-title").textContent = kind === "screenshot" ? "确认删除截图" : "确认删除";
   el("confirm-body").textContent = body;
   el("confirm-modal").hidden = false;
 }
@@ -617,13 +667,15 @@ function closeDeleteConfirm() {
 }
 
 async function confirmDelete() {
-  const ids = state.pendingDelete;
-  if (!ids || !ids.length) return;
+  const pending = state.pendingDelete;
+  if (!pending || !pending.ids.length) return;
+  const { kind, ids } = pending;
   const permanent = el("confirm-permanent").checked;
   const button = el("confirm-ok");
   button.disabled = true;
   try {
-    const res = await api("/api/delete", {
+    const endpoint = kind === "screenshot" ? "/api/screenshots/delete" : "/api/delete";
+    const res = await api(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -633,12 +685,21 @@ async function confirmDelete() {
       }),
     });
     closeDeleteConfirm();
-    toast(`${permanent ? "已彻底删除" : "已移入回收站"} ${res.deleted} 条（${fmtSize(res.bytes)}）`);
+    const unit = kind === "screenshot" ? "张" : "条";
+    toast(`${permanent ? "已彻底删除" : "已移入回收站"} ${res.deleted} ${unit}（${fmtSize(res.bytes)}）`);
     if (res.errors && res.errors.length) appendLog("删除提示：" + res.errors.join("；"));
-    state.selected.clear();
-    await loadRecordings();
     const trash = await api("/api/trash");
     updateTrashInfo(trash.stats);
+    updateShotTrash(trash.stats);
+    if (kind === "screenshot") {
+      state.shotSelected.clear();
+      updateShotSelection();
+      if (state.shotGame) await loadShotItems();
+      else await loadScreenshots();
+    } else {
+      state.selected.clear();
+      await loadRecordings();
+    }
   } catch (err) {
     toast("删除失败：" + err.message);
   } finally {
@@ -990,6 +1051,311 @@ async function revealOutput() {
   } catch (err) {
     toast("打开失败：" + err.message);
   }
+}
+
+// ---------------------------------------------------------------------------
+// 截图视图
+// ---------------------------------------------------------------------------
+function switchView(view) {
+  state.view = view;
+  for (const tab of document.querySelectorAll("#view-tabs .tab")) {
+    tab.classList.toggle("active", tab.dataset.view === view);
+  }
+  el("view-recordings").hidden = view !== "recordings";
+  el("view-screenshots").hidden = view !== "screenshots";
+  if (view === "screenshots" && !state.shotLoaded) {
+    state.shotLoaded = true;
+    loadScreenshots();
+  }
+}
+
+function onUserChange() {
+  if (state.view === "screenshots") {
+    state.shotSelected.clear();
+    state.shotGame = null;
+    state.shotGameName = "";
+    setShotSelectMode(false);
+    loadScreenshots();
+  } else {
+    loadRecordings();
+  }
+}
+
+function onKeydown(event) {
+  if (el("viewer-modal").hidden) return;
+  if (event.key === "Escape") closeViewer();
+  else if (event.key === "ArrowLeft") viewerStep(-1);
+  else if (event.key === "ArrowRight") viewerStep(1);
+}
+
+function shotFilterParams() {
+  const params = new URLSearchParams();
+  params.set("user", el("user-select").value || "auto");
+  const q = el("shot-q").value.trim();
+  if (q) params.set("q", q);
+  if (el("shot-since").value) params.set("since", el("shot-since").value);
+  if (el("shot-until").value) params.set("until", el("shot-until").value);
+  if (el("shot-caption").checked) params.set("caption", "1");
+  return params;
+}
+
+function applyShotFilters() {
+  if (state.shotGame) loadShotItems();
+  else loadScreenshots();
+}
+
+function resetShotFilters() {
+  el("shot-q").value = "";
+  el("shot-since").value = "";
+  el("shot-until").value = "";
+  el("shot-caption").checked = false;
+  applyShotFilters();
+}
+
+async function loadScreenshots() {
+  const user = el("user-select").value || "auto";
+  const params = shotFilterParams();
+  el("shot-info").textContent = "加载中…";
+  try {
+    const [summary, games] = await Promise.all([
+      api(`/api/screenshots/summary?user=${encodeURIComponent(user)}`),
+      api("/api/screenshots/games?" + params.toString()),
+    ]);
+    applyShotSummary(summary);
+    state.shotGames = games.games || [];
+    renderShotGames(games);
+  } catch (err) {
+    el("shot-info").textContent = "加载失败：" + err.message;
+  }
+}
+
+function applyShotSummary(summary) {
+  el("shot-total-line").textContent =
+    `全部：${summary.count} 张 · ${summary.games} 个游戏 · ${fmtSize(summary.total_size)}`;
+  updateShotTrash(summary.trash);
+}
+
+function updateShotTrash(trash) {
+  const node = el("shot-trash-info");
+  if (!trash) { node.textContent = "回收站：未启用"; return; }
+  node.textContent = `回收站：${trash.count} 项 / ${fmtSize(trash.bytes)}`;
+}
+
+function renderShotGames(data) {
+  el("shot-grid").hidden = true;
+  el("shot-grid").classList.remove("selecting");
+  const wrap = el("shot-games");
+  wrap.hidden = false;
+  wrap.innerHTML = "";
+  el("shot-back").hidden = true;
+  el("shot-download-page").hidden = true;
+  el("shot-select-toggle").hidden = true;
+  setShotSelectMode(false);
+  el("shot-title").textContent = "全部游戏";
+  el("shot-info").textContent =
+    `${data.count} 个游戏 · ${data.shots} 张 · ${fmtSize(data.total_size)}`;
+  el("shot-empty").hidden = state.shotGames.length > 0;
+  for (const game of state.shotGames) wrap.appendChild(renderShotGameCard(game));
+}
+
+function renderShotGameCard(game) {
+  const card = document.createElement("button");
+  card.type = "button";
+  card.className = "shot-game";
+  const art = document.createElement("img");
+  art.loading = "lazy";
+  art.alt = "";
+  art.src = withToken(`/api/icon/${encodeURIComponent(game.appid)}`);
+  art.addEventListener("error", () => { art.style.visibility = "hidden"; });
+  const meta = document.createElement("div");
+  meta.className = "shot-game-meta";
+  const name = document.createElement("span");
+  name.className = "shot-game-name";
+  name.textContent = game.game;
+  const sub = document.createElement("span");
+  sub.className = "shot-game-sub";
+  sub.textContent = `${game.count} 张 · ${fmtSize(game.bytes)}`;
+  meta.append(name, sub);
+  card.append(art, meta);
+  card.addEventListener("click", () => openShotGame(game.gameid, game.game));
+  return card;
+}
+
+async function openShotGame(gameid, name) {
+  state.shotGame = gameid;
+  state.shotGameName = name;
+  el("shot-back").hidden = false;
+  el("shot-title").textContent = name;
+  el("shot-download-page").hidden = false;
+  el("shot-select-toggle").hidden = false;
+  await loadShotItems();
+  window.scrollTo({ top: 0 });
+}
+
+async function showShotGames() {
+  state.shotGame = null;
+  state.shotGameName = "";
+  setShotSelectMode(false);
+  await loadScreenshots();
+}
+
+async function loadShotItems() {
+  const params = shotFilterParams();
+  if (state.shotGame) params.set("game", state.shotGame);
+  el("shot-info").textContent = "加载中…";
+  try {
+    const data = await api("/api/screenshots/list?" + params.toString());
+    state.shotItems = data.items || [];
+    el("shot-info").textContent = `${data.count} 张 · ${fmtSize(data.total_size)}`;
+    renderShotGrid();
+  } catch (err) {
+    el("shot-info").textContent = "加载失败：" + err.message;
+  }
+}
+
+function renderShotGrid() {
+  el("shot-games").hidden = true;
+  const grid = el("shot-grid");
+  grid.hidden = false;
+  grid.classList.toggle("selecting", state.shotSelectMode);
+  grid.innerHTML = "";
+  el("shot-empty").hidden = state.shotItems.length > 0;
+  state.shotItems.forEach((item, index) => grid.appendChild(renderShotTile(item, index)));
+  updateShotSelection();
+}
+
+function renderShotTile(item, index) {
+  const tile = document.createElement("div");
+  tile.className = "shot-tile";
+  tile.dataset.id = item.id;
+  if (state.shotSelected.has(item.id)) tile.classList.add("selected");
+
+  const img = document.createElement("img");
+  img.loading = "lazy";
+  img.decoding = "async";
+  img.alt = "";
+  img.dataset.src = withToken(
+    `/api/screenshot/thumb/${encodeURIComponent(item.id)}?user=${encodeURIComponent(el("user-select").value || "auto")}`);
+  img.addEventListener("error", () => img.classList.add("broken"));
+  ensureThumbObserver().observe(img);
+  tile.appendChild(img);
+
+  const check = document.createElement("span");
+  check.className = "shot-check";
+  check.textContent = "✓";
+  tile.appendChild(check);
+
+  if (item.caption) {
+    const cap = document.createElement("div");
+    cap.className = "shot-cap";
+    cap.textContent = item.caption;
+    tile.appendChild(cap);
+  }
+
+  tile.addEventListener("click", () => {
+    if (state.shotSelectMode) toggleShotSelection(item.id, tile);
+    else openViewer(index);
+  });
+  return tile;
+}
+
+function toggleShotSelection(id, tile) {
+  if (state.shotSelected.has(id)) state.shotSelected.delete(id);
+  else state.shotSelected.add(id);
+  if (tile) tile.classList.toggle("selected", state.shotSelected.has(id));
+  updateShotSelection();
+}
+
+function setShotSelectMode(on) {
+  state.shotSelectMode = on;
+  const grid = el("shot-grid");
+  if (grid) grid.classList.toggle("selecting", on);
+  el("shot-select-toggle").classList.toggle("primary", on);
+  el("shot-download-selected").hidden = !on;
+  el("shot-delete-selected").hidden = !on;
+  updateShotSelection();
+}
+
+function selectedShotItems() {
+  return state.shotItems.filter((item) => state.shotSelected.has(item.id));
+}
+
+function updateShotSelection() {
+  const n = state.shotSelected.size;
+  const toggle = el("shot-select-toggle");
+  if (!toggle.hidden) {
+    toggle.textContent = state.shotSelectMode
+      ? `完成${n ? `（已选 ${n}）` : ""}`
+      : (n ? `选择（已选 ${n}）` : "选择");
+  }
+  el("shot-download-selected").disabled = n === 0;
+  el("shot-delete-selected").disabled = n === 0;
+  el("shot-download-selected").textContent = n ? `下载选中（${n}）` : "下载选中";
+  el("shot-delete-selected").textContent = n ? `删除选中（${n}）` : "删除选中";
+}
+
+function downloadShot(item) {
+  const user = el("user-select").value || "auto";
+  triggerUrl(withToken(
+    `/api/screenshot/full/${encodeURIComponent(item.id)}?user=${encodeURIComponent(user)}&dl=1`));
+}
+
+async function downloadShots(items, confirmLarge = false) {
+  items = items || [];
+  if (!items.length) { toast("没有可下载的截图"); return; }
+  if (confirmLarge && items.length > 20) {
+    const size = items.reduce((sum, item) => sum + (item.size || 0), 0);
+    if (!window.confirm(`将逐张下载 ${items.length} 张（约 ${fmtSize(size)}）。继续？`)) return;
+  }
+  toast(`开始下载 ${items.length} 张…（浏览器可能询问是否允许多个文件）`);
+  for (const item of items) {
+    downloadShot(item);
+    await new Promise((resolve) => setTimeout(resolve, 350));
+  }
+}
+
+async function downloadAllShots() {
+  try {
+    const data = await api("/api/screenshots/list?" + shotFilterParams().toString());
+    if (!data.count) { toast("没有可下载的截图"); return; }
+    if (!window.confirm(
+      `将逐张下载 ${data.count} 张（约 ${fmtSize(data.total_size)}）。\n` +
+      "浏览器可能会提示是否允许下载多个文件。继续？")) return;
+    await downloadShots(data.items);
+  } catch (err) {
+    toast("下载失败：" + err.message);
+  }
+}
+
+function openViewer(index) {
+  state.viewerIndex = index;
+  updateViewer();
+  el("viewer-modal").hidden = false;
+}
+
+function updateViewer() {
+  const item = state.shotItems[state.viewerIndex];
+  if (!item) return;
+  const user = el("user-select").value || "auto";
+  el("viewer-img").src = withToken(
+    `/api/screenshot/full/${encodeURIComponent(item.id)}?user=${encodeURIComponent(user)}`);
+  el("viewer-title").textContent =
+    `${item.game} · ${item.recorded_display}` + (item.caption ? ` · ${item.caption}` : "");
+  el("viewer-prev").hidden = state.viewerIndex <= 0;
+  el("viewer-next").hidden = state.viewerIndex >= state.shotItems.length - 1;
+}
+
+function viewerStep(delta) {
+  const next = state.viewerIndex + delta;
+  if (next < 0 || next >= state.shotItems.length) return;
+  state.viewerIndex = next;
+  updateViewer();
+}
+
+function closeViewer() {
+  el("viewer-img").removeAttribute("src");
+  el("viewer-modal").hidden = true;
+  state.viewerIndex = -1;
 }
 
 init();

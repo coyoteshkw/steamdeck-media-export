@@ -221,3 +221,58 @@ ffmpeg 的 `concat:` 协议会**同时打开列表中的所有文件**，因此�
 
 剪辑目录里的视频是**独立副本**（与 `video/` 下的是不同 inode），不是硬链接。
 因此「导出全部」会再复制一份等量数据，规划空间时按原始体积的 1 倍预留。
+
+## 10. 游戏截图（`760/`）
+
+截图与录制分开存放，位于 `userdata/<id>/760/`：
+
+```
+760/
+├── screenshots.vdf                    # 元数据（Valve 文本 VDF）
+├── screenshots.backup / .firstbackup  # Steam 自动备份
+└── remote/<gameid>/screenshots/
+    ├── 20251218045342_1.jpg            # 原图（文件名 = UTC 时间戳）
+    └── thumbnails/20251218045342_1.jpg # Steam 已生成的缩略图（约 13KB）
+```
+
+### 文件名
+
+`<YYYYMMDD><HHMMSS>_<序号>.<ext>`，时间为 **UTC**；扩展名通常为 `jpg`（也可能有 png）。
+
+### `screenshots.vdf`
+
+Valve 文本 VDF，结构：
+
+```
+"screenshots"
+{
+    "<gameid>"
+    {
+        "0" {
+            "type"        "1"
+            "filename"    "<gameid>/screenshots/<name>"
+            "thumbnail"   "<gameid>/screenshots/thumbnails/<name>"
+            "width"       "1280"
+            "height"      "800"
+            "gameid"      "<gameid>"
+            "creation"    "<unix 秒>"
+            "caption"     "..."        # 可选
+            "Permissions" "2"
+            "timelineid" / "timelinetime"  # 可选（新截图管理器）
+            "hscreenshot" "..."
+        }
+        "1" { ... }
+    }
+    ...
+}
+```
+
+- 顶层键就是 `gameid`，编码与录制一致（非 Steam 快捷方式为 `(appid<<32)|0x02000000`）
+- `creation` 是精确的 unix 秒（UTC），比文件名更权威
+- 工具以**文件系统为准**，vdf 仅用于补充 `creation` / `width` / `height` / `caption`；
+  Steam 运行时 vdf 可能只写了一半，解析失败会被忽略（回退到文件名时间）
+
+### 删除
+
+删除截图时把**原图 + 缩略图**一起移入回收站；**不修改 vdf**（Steam 里可能显示缺失项，
+建议删除前关闭 Steam）。
