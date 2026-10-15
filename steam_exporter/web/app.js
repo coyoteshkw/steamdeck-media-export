@@ -36,6 +36,17 @@ function fmtDur(s) {
   return h ? `${h}:${pad(m)}:${pad(x)}` : `${m}:${pad(x)}`;
 }
 
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text == null ? "" : String(text);
+  return div.innerHTML;
+}
+
+function timestamp(item) {
+  const t = Date.parse(item.recorded_at);
+  return Number.isNaN(t) ? 0 : t;
+}
+
 let toastTimer = null;
 function toast(message) {
   const node = el("toast");
@@ -50,7 +61,12 @@ function toast(message) {
 // ---------------------------------------------------------------------------
 const state = {
   items: [],
+  groups: [],
   selected: new Set(),
+  expanded: new Set(),
+  rendered: new Set(),
+  statusById: new Map(),
+  sort: "recent",
   jobId: null,
   es: null,
   planned: 0,
@@ -61,7 +77,6 @@ const state = {
   currentName: "",
   currentTotal: null,
   outDir: "",
-  summary: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -70,7 +85,6 @@ const state = {
 async function init() {
   try {
     const summary = await api("/api/summary");
-    state.summary = summary;
     applySummary(summary);
   } catch (err) {
     el("summary-line").textContent = "无法连接后端：" + err.message;
@@ -81,25 +95,18 @@ async function init() {
 }
 
 function applySummary(s) {
-  // 账号
   const userSelect = el("user-select");
   userSelect.innerHTML = "";
   for (const user of s.users) {
-    const opt = document.createElement("option");
-    opt.value = user.id;
-    opt.textContent = user.id + (user.primary ? "（主账号）" : "") + ` · ${user.clips} 剪辑`;
-    userSelect.appendChild(opt);
+    userSelect.appendChild(new Option(
+      user.id + (user.primary ? "（主账号）" : "") + ` · ${user.clips} 剪辑`, user.id));
   }
   if (s.users.some((u) => u.id === s.default_user)) userSelect.value = s.default_user;
-  else if (s.users.some((u) => u.primary)) userSelect.value = s.users.find((u) => u.primary).id;
 
-  // 编码器
   const codec = el("codec");
   codec.innerHTML = "";
   for (const name of s.encoders.software) codec.appendChild(new Option(name, name));
-  for (const name of s.encoders.vaapi) {
-    codec.appendChild(new Option(name + "（硬件）", name));
-  }
+  for (const name of s.encoders.vaapi) codec.appendChild(new Option(name + "（硬件）", name));
 
   el("out-dir").value = s.default_out;
   el("template").value = s.default_template;
@@ -120,10 +127,14 @@ function bindEvents() {
   el("apply-filter").addEventListener("click", loadRecordings);
   el("user-select").addEventListener("change", loadRecordings);
   el("mode").addEventListener("change", syncModeFields);
+  el("sort-by").addEventListener("change", (e) => {
+    state.sort = e.target.value;
+    renderGroups();
+  });
   el("select-all").addEventListener("change", (e) => {
     state.selected.clear();
     if (e.target.checked) for (const item of state.items) state.selected.add(item.id);
-    renderTable();
+    refreshAllChecks();
     updateSelectionInfo();
   });
   el("export-selected").addEventListener("click", () => doExport(true));
@@ -140,7 +151,7 @@ function syncModeFields() {
 }
 
 // ---------------------------------------------------------------------------
-// 列表
+// 列表（按游戏分组）
 // ---------------------------------------------------------------------------
 function currentFilters() {
   return {
@@ -168,83 +179,253 @@ async function loadRecordings() {
     const data = await api("/api/recordings?" + params.toString());
     state.items = data.items;
     state.selected.clear();
+    state.rendered.clear();
     el("select-all").checked = false;
-    renderTable();
-    updateSelectionInfo();
-    el("list-info").textContent = `共 ${data.count} 条 · 合计 ${fmtSize(data.total_size)}`;
+    renderGroups();
+    el("list-info").textContent =
+      `共 ${data.count} 条 · ${state.groups.length} 个游戏 · ${fmtSize(data.total_size)}`;
   } catch (err) {
     el("list-info").textContent = "加载失败：" + err.message;
   }
 }
 
-function renderTable() {
-  const body = el("table-body");
-  body.innerHTML = "";
-  el("empty-hint").hidden = state.items.length > 0;
+function groupItems(items) {
+  const map = new Map();
+  for (const item of items) {
+    let group = map.get(item.game);
+    if (!group) {
+      group = { game: item.game, items: [], size: 0, clips: 0, backgrounds: 0, foregrounds: 0, latest: 0 };
+      map.set(item.game, group);
+    }
+    group.items.push(item);
+    group.size += item.size || 0;
+    if (item.kind === "clip") group.clips++;
+    else if (item.kind === "background") group.backgrounds++;
+    else group.foregrounds++;
+    group.latest = Math.max(group.latest, timestamp(item));
+  }
+  const groups = Array.from(map.values());
+  for (const group of groups) {
+    group.items.sort((a, b) => timestamp(b) - timestamp(a));
+  }
+  sortGroups(groups);
+  return groups;
+}
 
-  for (const item of state.items) {
-    const tr = document.createElement("tr");
-    tr.dataset.id = item.id;
-
-    const tdCheck = document.createElement("td");
-    const check = document.createElement("input");
-    check.type = "checkbox";
-    check.checked = state.selected.has(item.id);
-    check.addEventListener("change", () => {
-      if (check.checked) state.selected.add(item.id);
-      else state.selected.delete(item.id);
-      updateSelectionInfo();
-    });
-    tdCheck.appendChild(check);
-    tr.appendChild(tdCheck);
-
-    tr.appendChild(cell(`<span class="kind ${item.kind}">${item.kind_cn}</span>`));
-    tr.appendChild(cell(escapeHtml(item.game)));
-    tr.appendChild(cell(escapeHtml(item.recorded_display)));
-    tr.appendChild(cell(fmtDur(item.duration_s)));
-    tr.appendChild(cell(fmtSize(item.size)));
-
-    const tdId = document.createElement("td");
-    tdId.className = "mono";
-    tdId.textContent = item.id;
-    tr.appendChild(tdId);
-
-    const tdStatus = document.createElement("td");
-    tdStatus.className = "col-status status-cell";
-    tr.appendChild(tdStatus);
-
-    body.appendChild(tr);
+function sortGroups(groups) {
+  if (state.sort === "name") {
+    groups.sort((a, b) => a.game.localeCompare(b.game, "zh"));
+  } else if (state.sort === "size") {
+    groups.sort((a, b) => b.size - a.size);
+  } else {
+    groups.sort((a, b) => b.latest - a.latest);
   }
 }
 
-function cell(html) {
-  const td = document.createElement("td");
-  td.innerHTML = html;
-  return td;
+function renderGroups() {
+  const container = el("groups");
+  container.innerHTML = "";
+  const groups = groupItems(state.items);
+  state.groups = groups;
+  el("empty-hint").hidden = groups.length > 0;
+  for (const group of groups) container.appendChild(renderGroup(group));
+  updateSelectionInfo();
 }
 
-function escapeHtml(text) {
-  const div = document.createElement("div");
-  div.textContent = text == null ? "" : String(text);
-  return div.innerHTML;
+function metaText(group) {
+  const parts = [];
+  if (group.clips) parts.push(`剪辑 ${group.clips}`);
+  if (group.backgrounds) parts.push(`后台 ${group.backgrounds}`);
+  if (group.foregrounds) parts.push(`录像 ${group.foregrounds}`);
+  parts.push(fmtSize(group.size));
+  return parts.join(" · ");
 }
 
-function rowFor(id) {
-  return el("table-body").querySelector(`tr[data-id="${CSS.escape(id)}"]`);
+function renderGroup(group) {
+  const wrap = document.createElement("div");
+  wrap.className = "group";
+  wrap.dataset.game = group.game;
+
+  const head = document.createElement("div");
+  head.className = "group-head";
+
+  const caret = document.createElement("button");
+  caret.className = "caret";
+  caret.textContent = state.expanded.has(group.game) ? "▾" : "▸";
+  caret.setAttribute("aria-label", "展开/折叠");
+
+  const check = document.createElement("input");
+  check.type = "checkbox";
+  check.className = "group-check";
+  refreshGroupCheck(group, check);
+  check.addEventListener("change", () => {
+    for (const item of group.items) {
+      if (check.checked) state.selected.add(item.id);
+      else state.selected.delete(item.id);
+    }
+    wrap.querySelectorAll(".item-check").forEach((cb) => { cb.checked = check.checked; });
+    refreshGroupCheck(group, check);
+    updateSelectionInfo();
+  });
+
+  const title = document.createElement("div");
+  title.className = "group-title";
+  title.innerHTML =
+    `<span class="game-name">${escapeHtml(group.game)}</span>` +
+    `<span class="group-meta">${metaText(group)}</span>`;
+
+  const summary = document.createElement("div");
+  summary.className = "group-summary";
+
+  head.append(caret, check, title, summary);
+  const toggle = () => toggleGroup(group.game, wrap);
+  caret.addEventListener("click", toggle);
+  title.addEventListener("click", toggle);
+  wrap.appendChild(head);
+
+  const children = document.createElement("div");
+  children.className = "group-items";
+  children.hidden = !state.expanded.has(group.game);
+  wrap.appendChild(children);
+  if (state.expanded.has(group.game)) renderChildren(group, children);
+  updateGroupSummary(group, summary);
+  return wrap;
 }
 
-function setRowStatus(id, status, text) {
-  const row = rowFor(id);
-  if (!row) return;
-  row.classList.remove("running", "done", "failed");
-  if (status) row.classList.add(status);
-  const cellNode = row.querySelector(".status-cell");
-  if (cellNode) cellNode.textContent = text || "";
+function renderChildren(group, container) {
+  container.innerHTML = "";
+  for (const item of group.items) container.appendChild(renderItemRow(item));
+  state.rendered.add(group.game);
+}
+
+function renderItemRow(item) {
+  const row = document.createElement("div");
+  row.className = "item-row";
+  row.dataset.id = item.id;
+
+  const check = document.createElement("input");
+  check.type = "checkbox";
+  check.className = "item-check";
+  check.checked = state.selected.has(item.id);
+  check.addEventListener("change", () => {
+    if (check.checked) state.selected.add(item.id);
+    else state.selected.delete(item.id);
+    const group = state.groups.find((g) => g.game === item.game);
+    const groupCheck = document.querySelector(
+      `.group[data-game="${CSS.escape(item.game)}"] .group-check`);
+    if (group && groupCheck) refreshGroupCheck(group, groupCheck);
+    updateSelectionInfo();
+  });
+
+  const kind = document.createElement("span");
+  kind.className = `kind ${item.kind}`;
+  kind.textContent = item.kind_cn;
+
+  row.append(
+    check,
+    kind,
+    span("item-time", item.recorded_display),
+    span("item-dur", fmtDur(item.duration_s)),
+    span("item-size", fmtSize(item.size)),
+    span("item-id mono", item.id),
+  );
+
+  const status = document.createElement("span");
+  status.className = "item-status";
+  const current = state.statusById.get(item.id);
+  if (current) {
+    status.textContent = current.text;
+    row.classList.add(current.status);
+  }
+  row.appendChild(status);
+  return row;
+}
+
+function span(className, text) {
+  const node = document.createElement("span");
+  node.className = className;
+  node.textContent = text;
+  return node;
+}
+
+function toggleGroup(game, wrap) {
+  const children = wrap.querySelector(".group-items");
+  const caret = wrap.querySelector(".caret");
+  if (state.expanded.has(game)) {
+    state.expanded.delete(game);
+    children.hidden = true;
+    caret.textContent = "▸";
+  } else {
+    state.expanded.add(game);
+    children.hidden = false;
+    caret.textContent = "▾";
+    const group = state.groups.find((g) => g.game === game);
+    if (group && !state.rendered.has(game)) renderChildren(group, children);
+  }
+}
+
+function refreshGroupCheck(group, check) {
+  let selected = 0;
+  for (const item of group.items) if (state.selected.has(item.id)) selected++;
+  check.checked = selected > 0 && selected === group.items.length;
+  check.indeterminate = selected > 0 && selected < group.items.length;
+}
+
+function refreshAllChecks() {
+  const container = el("groups");
+  for (const group of state.groups) {
+    const wrap = container.querySelector(`.group[data-game="${CSS.escape(group.game)}"]`);
+    if (!wrap) continue;
+    const groupCheck = wrap.querySelector(".group-check");
+    if (groupCheck) refreshGroupCheck(group, groupCheck);
+    wrap.querySelectorAll(".item-row").forEach((row) => {
+      const cb = row.querySelector(".item-check");
+      if (cb) cb.checked = state.selected.has(row.dataset.id);
+    });
+  }
 }
 
 function updateSelectionInfo() {
   el("selection-info").textContent = `已选 ${state.selected.size} 条`;
   el("export-selected").disabled = state.selected.size === 0;
+}
+
+function updateGroupSummary(group, node) {
+  if (!node) return;
+  let done = 0, failed = 0, running = 0;
+  for (const item of group.items) {
+    const status = state.statusById.get(item.id);
+    if (!status) continue;
+    if (status.status === "done") done++;
+    else if (status.status === "failed") failed++;
+    else if (status.status === "running") running++;
+  }
+  node.innerHTML = "";
+  if (running) node.append(chip("run", `导出中 ${running}`));
+  if (done) node.append(chip("ok", `✓ ${done}`));
+  if (failed) node.append(chip("err", `✗ ${failed}`));
+}
+
+function chip(kind, text) {
+  const node = document.createElement("span");
+  node.className = `chip ${kind}`;
+  node.textContent = text;
+  return node;
+}
+
+function setItemStatus(id, status, text) {
+  state.statusById.set(id, { status, text });
+  const row = el("groups").querySelector(`.item-row[data-id="${CSS.escape(id)}"]`);
+  if (!row) return;
+  row.classList.remove("running", "done", "failed");
+  if (status) row.classList.add(status);
+  const statusNode = row.querySelector(".item-status");
+  if (statusNode) statusNode.textContent = text || "";
+  const wrap = row.closest(".group");
+  if (wrap) {
+    const group = state.groups.find((g) => g.game === wrap.dataset.game);
+    updateGroupSummary(group, wrap.querySelector(".group-summary"));
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -272,8 +453,8 @@ async function doExport(useSelected) {
   if (useSelected) {
     payload.ids = Array.from(state.selected);
   } else {
-    Object.assign(payload, currentFilters());
-    payload.games = currentFilters().games;
+    const f = currentFilters();
+    Object.assign(payload, f);
     payload.all = true;
   }
 
@@ -283,10 +464,7 @@ async function doExport(useSelected) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    if (payload.dry_run) {
-      showPlan(res);
-      return;
-    }
+    if (payload.dry_run) { showPlan(res); return; }
     toast(`已开始导出：${res.planned} 条`);
     startJob(res.job_id, res.planned, res.total_size);
   } catch (err) {
@@ -301,7 +479,8 @@ function showPlan(res) {
   el("overall-text").textContent = `计划 ${res.count} 条 · 预计 ${fmtSize(res.total_size)}`;
   el("item-text").textContent = "仅预演，未写文件";
   el("cancel-job").disabled = true;
-  const lines = res.items.slice(0, 200).map((it) => `${it.source.game}  ${it.source.recorded_display}  ->  ${it.output}`);
+  const lines = res.items.slice(0, 200).map(
+    (it) => `${it.source.game}  ${it.source.recorded_display}  ->  ${it.output}`);
   el("log").textContent = lines.join("\n") + (res.items.length > 200 ? "\n…" : "");
 }
 
@@ -330,7 +509,7 @@ function startJob(jobId, planned, totalSize) {
     try { data = JSON.parse(event.data); } catch (e) { return; }
     handleJobEvent(data);
   };
-  es.onerror = () => { /* 结束时会主动 close */ };
+  es.onerror = () => { /* 结束时主动 close */ };
 }
 
 function handleJobEvent(ev) {
@@ -341,7 +520,7 @@ function handleJobEvent(ev) {
       break;
     case "item_skipped":
       state.skipped++;
-      setRowStatus(ev.source.id, "done", "已存在，跳过");
+      setItemStatus(ev.source.id, "done", "已存在，跳过");
       appendLog(`跳过（已存在）：${ev.source.game} ${ev.source.recorded_display}`);
       updateOverall();
       break;
@@ -349,7 +528,7 @@ function handleJobEvent(ev) {
       if (ev.source) {
         state.currentName = `${ev.source.game} · ${ev.source.recorded_display}`;
         state.currentTotal = ev.source.duration_s || null;
-        setRowStatus(ev.source.id, "running", "导出中…");
+        setItemStatus(ev.source.id, "running", "导出中…");
         el("item-text").textContent = state.currentName;
         el("item-bar").style.width = "0%";
       }
@@ -369,13 +548,13 @@ function handleJobEvent(ev) {
     case "item_done":
       state.done++;
       state.bytes += ev.size || 0;
-      setRowStatus(ev.source.id, "done", "✓ 完成");
+      setItemStatus(ev.source.id, "done", "✓ 完成");
       appendLog(`✓ ${ev.output}  (${fmtSize(ev.size)})`);
       updateOverall();
       break;
     case "item_failed":
       state.failed++;
-      if (ev.source) setRowStatus(ev.source.id, "failed", "✗ 失败");
+      if (ev.source) setItemStatus(ev.source.id, "failed", "✗ 失败");
       appendLog(`✗ 失败：${ev.source ? ev.source.id : ""} ${ev.error || ""}`);
       updateOverall();
       break;
@@ -388,8 +567,7 @@ function handleJobEvent(ev) {
     case "finished":
       appendLog(
         `完成：成功 ${ev.exported}，跳过 ${ev.skipped}，失败 ${ev.failed}` +
-        (ev.cancelled ? "，已取消" : "") + `，输出 ${fmtSize(ev.bytes)}`
-      );
+        (ev.cancelled ? "，已取消" : "") + `，输出 ${fmtSize(ev.bytes)}`);
       break;
     case "end":
       finishJob(ev.status);

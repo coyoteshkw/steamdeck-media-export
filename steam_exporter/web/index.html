@@ -119,28 +119,20 @@
   <div class="toolbar">
     <label class="checkbox inline"><input type="checkbox" id="select-all"><span>全选</span></label>
     <span class="muted" id="selection-info">已选 0 条</span>
+    <label class="field inline compact">
+      <span>排序</span>
+      <select id="sort-by">
+        <option value="recent">按最近录制</option>
+        <option value="size">按体积</option>
+        <option value="name">按名称</option>
+      </select>
+    </label>
     <span class="spacer"></span>
     <span class="muted" id="list-info"></span>
     <button class="btn" id="export-selected" disabled>导出选中</button>
     <button class="btn primary" id="export-all">导出全部匹配</button>
   </div>
-  <div class="table-wrap">
-    <table id="recordings">
-      <thead>
-        <tr>
-          <th class="col-check"></th>
-          <th class="col-kind">类型</th>
-          <th class="col-game">游戏</th>
-          <th class="col-time">录制时间</th>
-          <th class="col-dur">时长</th>
-          <th class="col-size">大小</th>
-          <th>ID</th>
-          <th class="col-status">状态</th>
-        </tr>
-      </thead>
-      <tbody id="table-body"></tbody>
-    </table>
-  </div>
+  <div class="groups" id="groups"></div>
   <div class="empty" id="empty-hint" hidden>没有匹配的录制。</div>
 </section>
 
