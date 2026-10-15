@@ -213,6 +213,7 @@ function bindEvents() {
   el("shot-download-page").addEventListener("click", downloadShotPage);
   el("shot-download-all").addEventListener("click", downloadAllShots);
   el("shot-download-selected").addEventListener("click", () => downloadShots(selectedShotItems()));
+  el("shot-clear-selection").addEventListener("click", clearShotSelection);
   el("shot-delete-selected").addEventListener("click", () =>
     openDeleteConfirm(selectedShotItems().map((s) => s.id), "screenshot"));
 
@@ -1359,6 +1360,16 @@ function setShotSelectMode(on) {
   el("shot-select-toggle").classList.toggle("primary", on);
   el("shot-download-selected").hidden = !on;
   el("shot-delete-selected").hidden = !on;
+  el("shot-clear-selection").hidden = !on;
+  updateShotSelection();
+}
+
+function clearShotSelection() {
+  state.shotSelected.clear();
+  const grid = el("shot-grid");
+  for (const tile of grid.querySelectorAll(".shot-tile.selected")) {
+    tile.classList.remove("selected");
+  }
   updateShotSelection();
 }
 
@@ -1376,6 +1387,7 @@ function updateShotSelection() {
   }
   el("shot-download-selected").disabled = n === 0;
   el("shot-delete-selected").disabled = n === 0;
+  el("shot-clear-selection").disabled = n === 0;
   el("shot-download-selected").textContent = n ? `下载选中（${n}）` : "下载选中";
   el("shot-delete-selected").textContent = n ? `删除选中（${n}）` : "删除选中";
 }
