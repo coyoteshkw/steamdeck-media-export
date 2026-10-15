@@ -1056,7 +1056,7 @@ def serve(
     default_user: str = "auto",
     default_out: Path = Path("~/Videos/SteamExports"),
     cache_dir: Path | None = None,
-    cache_ttl: float = 1800.0,
+    cache_ttl: float = 600.0,
     cache_max: int = 5 * 1024**3,
 ) -> int:
     from .util import raise_nofile_limit

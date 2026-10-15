@@ -357,8 +357,8 @@ def build_parser() -> argparse.ArgumentParser:
                          help="界面默认输出目录")
     p_serve.add_argument("--cache", default=None,
                          help="下载临时缓存目录（默认 ~/.cache/steam-exporter/downloads）")
-    p_serve.add_argument("--cache-ttl", type=float, default=30,
-                         help="下载缓存保留时间（分钟，默认 30）")
+    p_serve.add_argument("--cache-ttl", type=float, default=10,
+                         help="下载缓存保留时间（分钟，默认 10）")
     p_serve.add_argument("--cache-max", type=float, default=5,
                          help="下载缓存容量上限（GB，默认 5）")
     p_serve.set_defaults(func=cmd_serve)
