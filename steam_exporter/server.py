@@ -47,8 +47,99 @@ CONTENT_TYPES = {
     ".svg": "image/svg+xml",
     ".ico": "image/x-icon",
     ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
     ".woff2": "font/woff2",
 }
+
+# 游戏图缓存
+_ART_CACHE: dict[str, Path | None] = {}
+
+
+def find_game_art(appid: str) -> Path | None:
+    """在 Steam 本地缓存里找一张该游戏的代表图（头部/胶囊/Logo/自定义网格）。
+
+    找不到返回 None。结果会缓存。
+    """
+    if not appid or not appid.isdigit():
+        return None
+    if appid in _ART_CACHE:
+        return _ART_CACHE[appid]
+
+    result: Path | None = None
+    for root in find_steam_roots():
+        cache = root / "appcache" / "librarycache"
+        appdir = cache / appid
+
+        # 优先级：横版头部/胶囊 > 竖版 > Hero > Logo
+        priority = (
+            "library_header.jpg",
+            "header.jpg",
+            "library_capsule.jpg",
+            "library_600x900.jpg",
+            "library_600x900_2x.jpg",
+            "library_hero.jpg",
+            "logo.png",
+        )
+        for name in priority:
+            candidate = appdir / name
+            if candidate.is_file():
+                result = candidate
+                break
+
+        if result is None and appdir.is_dir():
+            subs = [s for s in sorted(appdir.iterdir()) if s.is_dir()]
+            for name in priority:
+                for sub in subs:
+                    candidate = sub / name
+                    if candidate.is_file():
+                        result = candidate
+                        break
+                if result is not None:
+                    break
+
+        if result is None:
+            # 顶层的任意 <hash>.jpg（不递归）
+            if appdir.is_dir():
+                for candidate in sorted(appdir.glob("*.jpg")):
+                    result = candidate
+                    break
+
+        if result is None:
+            top_icon = cache / f"{appid}_icon.jpg"
+            if top_icon.is_file():
+                result = top_icon
+
+        # 非 Steam 快捷方式：自定义网格图
+        if result is None:
+            grid_names = (
+                f"{appid}p.png",
+                f"{appid}.png",
+                f"{appid}_hero.png",
+                f"{appid}_logo.png",
+                f"{appid}_icon.png",
+                f"{appid}_icon.ico",
+            )
+            userdata = root / "userdata"
+            if userdata.is_dir():
+                for user in sorted(userdata.iterdir()):
+                    grid = user / "config" / "grid"
+                    if not grid.is_dir():
+                        continue
+                    for name in grid_names:
+                        candidate = grid / name
+                        if candidate.is_file():
+                            result = candidate
+                            break
+                    if result is not None:
+                        break
+
+        if result is not None:
+            break
+
+    _ART_CACHE[appid] = result
+    return result
 
 END_STATUSES = {"done", "failed", "cancelled"}
 
@@ -228,6 +319,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._handle_summary()
         if path == "/api/recordings":
             return self._handle_recordings(query)
+        if path.startswith("/api/icon/"):
+            return self._handle_icon(path[len("/api/icon/"):])
         if path == "/api/jobs":
             return self._send_json({"jobs": []})
         if path.startswith("/api/jobs/"):
@@ -307,6 +400,22 @@ class Handler(BaseHTTPRequestHandler):
             until=until,
             ids=ids,
         )
+
+    def _handle_icon(self, appid: str) -> None:
+        art = find_game_art(appid.strip())
+        if art is None:
+            return self._error(404, "没有找到图标")
+        content_type = CONTENT_TYPES.get(art.suffix.lower(), "image/jpeg")
+        try:
+            body = art.read_bytes()
+        except OSError as exc:
+            return self._error(500, str(exc))
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "public, max-age=604800")
+        self.end_headers()
+        self.wfile.write(body)
 
     def _handle_job(self, job_id: str) -> None:
         job = self.state.jobs.get(job_id)

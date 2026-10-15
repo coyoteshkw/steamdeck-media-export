@@ -274,10 +274,23 @@ function renderGroup(group) {
     `<span class="game-name">${escapeHtml(group.game)}</span>` +
     `<span class="group-meta">${metaText(group)}</span>`;
 
+  const thumb = document.createElement("img");
+  thumb.className = "game-thumb";
+  thumb.alt = "";
+  thumb.loading = "lazy";
+  const appid = group.items[0] ? group.items[0].appid : "";
+  thumb.src = withToken(`/api/icon/${encodeURIComponent(appid)}`);
+  thumb.addEventListener("error", () => {
+    const fallback = document.createElement("div");
+    fallback.className = "game-thumb";
+    fallback.textContent = (group.game || "?").trim().charAt(0).toUpperCase();
+    thumb.replaceWith(fallback);
+  });
+
   const summary = document.createElement("div");
   summary.className = "group-summary";
 
-  head.append(caret, check, title, summary);
+  head.append(caret, check, thumb, title, summary);
   const toggle = () => toggleGroup(group.game, wrap);
   caret.addEventListener("click", toggle);
   title.addEventListener("click", toggle);

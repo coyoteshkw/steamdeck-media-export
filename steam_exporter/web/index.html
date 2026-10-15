@@ -7,155 +7,146 @@
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<header class="topbar">
+<header class="appbar">
   <div class="brand">
     <span class="logo">🎬</span>
-    <div>
+    <div class="brand-text">
       <h1>Steam 录制导出</h1>
       <div class="sub" id="summary-line">加载中…</div>
     </div>
   </div>
-  <div class="topbar-right">
+  <div class="appbar-right">
+    <span id="ffmpeg-badge" class="badge"></span>
     <label class="field inline">
       <span>账号</span>
       <select id="user-select"></select>
     </label>
-    <span id="ffmpeg-badge" class="badge"></span>
   </div>
 </header>
 
-<section class="panel">
-  <div class="panel-title">导出设置</div>
-  <div class="grid">
-    <label class="field wide">
-      <span>输出目录</span>
-      <input type="text" id="out-dir" spellcheck="false">
-    </label>
-    <label class="field">
-      <span>模式</span>
-      <select id="mode">
-        <option value="lossless">无损复制（快）</option>
-        <option value="compress">压缩转码（小）</option>
-      </select>
-    </label>
-    <label class="field compress-only">
-      <span>编码器</span>
-      <select id="codec"></select>
-    </label>
-    <label class="field compress-only">
-      <span>CRF / QP</span>
-      <input type="number" id="crf" value="23" min="0" max="63" step="1">
-    </label>
-    <label class="field compress-only">
-      <span>预设</span>
-      <select id="preset">
-        <option>ultrafast</option><option>superfast</option><option>veryfast</option>
-        <option>faster</option><option>fast</option>
-        <option selected>medium</option>
-        <option>slow</option><option>slower</option><option>veryslow</option>
-      </select>
-    </label>
-    <label class="field compress-only">
-      <span>缩放</span>
-      <input type="text" id="scale" placeholder="留空=原始，如 1280:-2">
-    </label>
-    <label class="field">
-      <span>并发</span>
-      <input type="number" id="jobs" value="1" min="1" max="8" step="1">
-    </label>
-    <label class="field checkbox">
-      <input type="checkbox" id="faststart" checked>
-      <span>faststart（便于发布）</span>
-    </label>
-    <label class="field checkbox">
-      <input type="checkbox" id="trim" checked>
-      <span>裁剪多余尾部（按元数据时长）</span>
-    </label>
-    <label class="field checkbox">
-      <input type="checkbox" id="force">
-      <span>强制重导（忽略清单）</span>
-    </label>
-    <label class="field checkbox">
-      <input type="checkbox" id="dry-run">
-      <span>仅预演（不写文件）</span>
-    </label>
-    <label class="field wide">
-      <span>命名模板</span>
-      <input type="text" id="template" spellcheck="false">
-    </label>
-  </div>
-</section>
+<div class="layout">
+  <aside class="sidebar">
+    <section class="card">
+      <div class="card-title">导出设置</div>
+      <div class="stack">
+        <label class="field">
+          <span>输出目录</span>
+          <input type="text" id="out-dir" spellcheck="false">
+        </label>
+        <label class="field">
+          <span>模式</span>
+          <select id="mode">
+            <option value="lossless">无损复制（快）</option>
+            <option value="compress">压缩转码（小）</option>
+          </select>
+        </label>
+        <label class="field compress-only">
+          <span>编码器</span>
+          <select id="codec"></select>
+        </label>
+        <label class="field compress-only">
+          <span>CRF / QP（越小越清晰）</span>
+          <input type="number" id="crf" value="23" min="0" max="63" step="1">
+        </label>
+        <label class="field compress-only">
+          <span>预设</span>
+          <select id="preset">
+            <option>ultrafast</option><option>superfast</option><option>veryfast</option>
+            <option>faster</option><option>fast</option>
+            <option selected>medium</option>
+            <option>slow</option><option>slower</option><option>veryslow</option>
+          </select>
+        </label>
+        <label class="field compress-only">
+          <span>缩放</span>
+          <input type="text" id="scale" placeholder="留空 = 原始分辨率">
+        </label>
+        <label class="field">
+          <span>并发数</span>
+          <input type="number" id="jobs" value="1" min="1" max="8" step="1">
+        </label>
+        <label class="field">
+          <span>命名模板</span>
+          <input type="text" id="template" spellcheck="false">
+        </label>
+        <div class="checks">
+          <label class="checkbox"><input type="checkbox" id="faststart" checked><span>faststart</span></label>
+          <label class="checkbox"><input type="checkbox" id="trim" checked><span>裁剪尾部</span></label>
+          <label class="checkbox"><input type="checkbox" id="force"><span>强制重导</span></label>
+          <label class="checkbox"><input type="checkbox" id="dry-run"><span>仅预演</span></label>
+        </div>
+      </div>
+    </section>
 
-<section class="panel">
-  <div class="panel-title">筛选</div>
-  <div class="grid">
-    <label class="field">
-      <span>类型</span>
-      <select id="type-filter">
-        <option value="all">全部</option>
-        <option value="clip">剪辑</option>
-        <option value="background">后台录像</option>
-        <option value="foreground">前台录像</option>
-        <option value="recording">录像（前后台）</option>
-      </select>
-    </label>
-    <label class="field">
-      <span>游戏</span>
-      <input type="text" id="game-filter" placeholder="关键词，如 Outer Wilds">
-    </label>
-    <label class="field">
-      <span>起始日期</span>
-      <input type="date" id="since-filter">
-    </label>
-    <label class="field">
-      <span>结束日期</span>
-      <input type="date" id="until-filter">
-    </label>
-    <label class="field wide">
-      <span>搜索 ID</span>
-      <input type="text" id="q-filter" placeholder="如 clip_753640_20260905_092200">
-    </label>
-    <button class="btn primary" id="apply-filter">应用筛选</button>
-  </div>
-</section>
+    <section class="card">
+      <div class="card-title">筛选</div>
+      <div class="stack">
+        <label class="field">
+          <span>类型</span>
+          <select id="type-filter">
+            <option value="all">全部</option>
+            <option value="clip">剪辑</option>
+            <option value="background">后台录像</option>
+            <option value="foreground">前台录像</option>
+            <option value="recording">录像（前后台）</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>游戏关键词</span>
+          <input type="text" id="game-filter" placeholder="如 Outer Wilds">
+        </label>
+        <div class="row2">
+          <label class="field"><span>起始日期</span><input type="date" id="since-filter"></label>
+          <label class="field"><span>结束日期</span><input type="date" id="until-filter"></label>
+        </div>
+        <label class="field">
+          <span>搜索 ID</span>
+          <input type="text" id="q-filter" placeholder="如 clip_753640_20260905_092200">
+        </label>
+        <button class="btn primary block" id="apply-filter">应用筛选</button>
+      </div>
+    </section>
+  </aside>
 
-<section class="panel">
-  <div class="toolbar">
-    <label class="checkbox inline"><input type="checkbox" id="select-all"><span>全选</span></label>
-    <span class="muted" id="selection-info">已选 0 条</span>
-    <label class="field inline compact">
-      <span>排序</span>
-      <select id="sort-by">
-        <option value="recent">按最近录制</option>
-        <option value="size">按体积</option>
-        <option value="name">按名称</option>
-      </select>
-    </label>
-    <span class="spacer"></span>
-    <span class="muted" id="list-info"></span>
-    <button class="btn" id="export-selected" disabled>导出选中</button>
-    <button class="btn primary" id="export-all">导出全部匹配</button>
-  </div>
-  <div class="groups" id="groups"></div>
-  <div class="empty" id="empty-hint" hidden>没有匹配的录制。</div>
-</section>
+  <main class="main">
+    <div class="toolbar">
+      <label class="checkbox inline"><input type="checkbox" id="select-all"><span>全选</span></label>
+      <span class="muted" id="selection-info">已选 0 条</span>
+      <label class="field inline compact">
+        <span>排序</span>
+        <select id="sort-by">
+          <option value="recent">按最近录制</option>
+          <option value="size">按体积</option>
+          <option value="name">按名称</option>
+        </select>
+      </label>
+      <span class="spacer"></span>
+      <span class="muted" id="list-info"></span>
+      <button class="btn" id="export-selected" disabled>导出选中</button>
+      <button class="btn primary" id="export-all">导出全部匹配</button>
+    </div>
 
-<section class="panel job-panel" id="job-panel" hidden>
-  <div class="panel-title">导出进度 <span id="job-status" class="badge"></span></div>
-  <div class="progress-row">
-    <div class="progress"><div class="bar" id="overall-bar"></div></div>
-    <div class="progress-text" id="overall-text">—</div>
-  </div>
-  <div class="progress-row">
-    <div class="progress thin"><div class="bar" id="item-bar"></div></div>
-    <div class="progress-text" id="item-text">—</div>
-  </div>
-  <div class="job-actions">
-    <button class="btn danger" id="cancel-job">取消任务</button>
-    <button class="btn" id="reveal-output">打开导出目录</button>
-  </div>
-  <pre class="log" id="log"></pre>
-</section>
+    <section class="card job-panel" id="job-panel" hidden>
+      <div class="card-title">导出进度 <span id="job-status" class="badge"></span></div>
+      <div class="progress-row">
+        <div class="progress"><div class="bar" id="overall-bar"></div></div>
+        <div class="progress-text" id="overall-text">—</div>
+      </div>
+      <div class="progress-row">
+        <div class="progress thin"><div class="bar" id="item-bar"></div></div>
+        <div class="progress-text" id="item-text">—</div>
+      </div>
+      <div class="job-actions">
+        <button class="btn danger" id="cancel-job">取消任务</button>
+        <button class="btn" id="reveal-output">打开导出目录</button>
+      </div>
+      <pre class="log" id="log"></pre>
+    </section>
+
+    <div class="groups" id="groups"></div>
+    <div class="empty" id="empty-hint" hidden>没有匹配的录制。</div>
+  </main>
+</div>
 
 <div class="toast" id="toast" hidden></div>
 
