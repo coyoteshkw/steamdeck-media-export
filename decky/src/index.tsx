@@ -144,9 +144,10 @@ function Content() {
 
       <PanelSectionRow>
         <Field label="手机访问地址" bottomSeparator="none" childrenLayout="below">
-          <div style={{ ...small, opacity: running ? 0.9 : 0.45 }}>
-            {status?.url || "—"}
-            {running ? "" : "　（未启动，打开上面的开关后可用）"}
+          <div style={{ ...small, opacity: running ? 0.9 : 0.5 }}>
+            {status?.url
+              ? `${status.url}${running ? "" : "（未启动）"}`
+              : "打开开关后显示地址"}
           </div>
         </Field>
       </PanelSectionRow>

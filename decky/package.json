@@ -1,6 +1,6 @@
 {
   "name": "steam-media-export",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "type": "module",
   "private": true,
   "description": "Decky Loader 面板：开关 Steam 录制/截图管理页面",

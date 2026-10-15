@@ -15,7 +15,6 @@ import os
 import socket
 import subprocess
 import threading
-import time
 from collections import deque
 from pathlib import Path
 from typing import Any, Optional
@@ -117,29 +116,13 @@ def _ip_rank(ip: str) -> int:
     return 3
 
 
-def _pick_lan_ip_uncached() -> str:
+def pick_lan_ip() -> str:
+    """探测本机局域网 IP。**只在启动服务时调用一次**（不轮询、不缓存）。"""
     ips = _lan_ips()
     if not ips:
         return "127.0.0.1"
     ips.sort(key=lambda ip: (_ip_rank(ip), ip))
     return ips[0]
-
-
-# 本机 IP 缓存：getaddrinfo(hostname) 会走 DNS，主机名不在 /etc/hosts 时
-# 网络切换/DNS 抽风可能阻塞数秒。前端每几秒轮询一次 get_status，
-# 这里加个短 TTL 缓存，免得反复解析（启动服务时会强制刷新）。
-_IP_CACHE_TTL = 30.0
-_ip_cache: Optional[tuple[float, str]] = None
-
-
-def pick_lan_ip(force: bool = False) -> str:
-    global _ip_cache
-    now = time.monotonic()
-    if not force and _ip_cache is not None and now - _ip_cache[0] < _IP_CACHE_TTL:
-        return _ip_cache[1]
-    ip = _pick_lan_ip_uncached()
-    _ip_cache = (now, ip)
-    return ip
 
 
 def _port_free(port: int) -> bool:
@@ -166,6 +149,7 @@ def find_free_port(preferred: int, tries: int = PORT_TRIES) -> int:
 class Plugin:
     process: Optional[subprocess.Popen] = None
     port: int = PORT_DEFAULT
+    ip: Optional[str] = None  # 只在 start_server 时探测一次
     log_lines: deque = deque(maxlen=200)
     error: Optional[str] = None
     _reader: Optional[threading.Thread] = None
@@ -242,13 +226,13 @@ class Plugin:
         port = self.port if running else int(self._get("port", PORT_DEFAULT))
         token = config["token"]
         query = f"?token={token}" if token else ""
-        ip = pick_lan_ip()
+        ip = self.ip
         return {
             "running": running,
             "port": port,
             "configured_port": int(self._get("port", PORT_DEFAULT)),
-            "ip": ip,
-            "url": f"http://{ip}:{port}/{query}",
+            "ip": ip or "",
+            "url": f"http://{ip}:{port}/{query}" if ip else "",
             "token": token,
             "project_dir": config["project"],
             "project_ok": Path(config["project"]).is_dir(),
@@ -259,8 +243,8 @@ class Plugin:
 
     async def start_server(self, port: Optional[int] = None) -> dict:
         self.error = None
-        # 网络可能变了，重新探测一次本机 IP（并刷新缓存）
-        pick_lan_ip(force=True)
+        # 只在启动时探测一次本机 IP；之后 get_status 直接用它，不再碰网络
+        self.ip = pick_lan_ip()
         config = self._config()
         project = Path(config["project"])
         if not project.is_dir():
