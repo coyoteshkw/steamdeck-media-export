@@ -231,7 +231,9 @@ function bindEvents() {
     if (item) downloadShot(item);
   });
   el("viewer-modal").addEventListener("click", (event) => {
-    if (event.target.id === "viewer-modal") closeViewer();
+    // 点图片外的空白处（modal 或 stage 背景）关闭；点图片本身不关闭
+    const id = event.target.id;
+    if (id === "viewer-modal" || id === "viewer-stage") closeViewer();
   });
 
   // 手机抽屉（顶栏按钮按当前视图打开对应侧栏）
