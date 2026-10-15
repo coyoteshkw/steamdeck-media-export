@@ -30,6 +30,21 @@ PROJECT_DEFAULT = str(Path.home() / "code-study" / "steam-recording-exporter")
 OUT_DEFAULT = str(Path.home() / "Videos" / "SteamExports")
 PORT_TRIES = 50  # 端口冲突时最多往后试多少个
 
+
+def _plugin_dir() -> Optional[Path]:
+    """Decky 注入的插件目录（取不到时返回 None）。"""
+    value = getattr(decky, "DECKY_PLUGIN_DIR", "") or os.environ.get("DECKY_PLUGIN_DIR", "")
+    return Path(value) if value else None
+
+
+def bundled_project() -> Optional[Path]:
+    """自包含打包时，主程序代码放在 <插件目录>/vendor/。"""
+    plugin_dir = _plugin_dir()
+    if plugin_dir is None:
+        return None
+    vendor = plugin_dir / "vendor"
+    return vendor if (vendor / "steam_exporter").is_dir() else None
+
 # 启动输出里需要回显到面板的信息行
 INFO_PREFIXES = (
     ("out", "输出："),
@@ -189,9 +204,26 @@ class Plugin:
         manager.setSetting(key, value)
         manager.commit()
 
+    def _resolve_project(self) -> tuple[str, str]:
+        """返回 (主程序目录, 来源)。优先级：显式设置 > 内置 vendor > 默认仓库路径。
+
+        - ``custom``：用户在设置里指定了 project_dir
+        - ``bundled``：自包含包里的内置代码（分发用，不依赖仓库）
+        - ``repo``：默认的本地仓库路径（开发用）
+        """
+        explicit = self._settings_manager().getSetting("project_dir", None)
+        if explicit:
+            return str(Path(explicit).expanduser()), "custom"
+        bundled = bundled_project()
+        if bundled is not None:
+            return str(bundled), "bundled"
+        return str(Path(PROJECT_DEFAULT).expanduser()), "repo"
+
     def _config(self) -> dict[str, str]:
+        project, source = self._resolve_project()
         return {
-            "project": str(Path(self._get("project_dir", PROJECT_DEFAULT)).expanduser()),
+            "project": project,
+            "source": source,
             "out": str(Path(self._get("out_dir", OUT_DEFAULT)).expanduser()),
             "token": str(self._get("token", TOKEN_DEFAULT)),
         }
@@ -235,6 +267,7 @@ class Plugin:
             "url": f"http://{ip}:{port}/{query}" if ip else "",
             "token": token,
             "project_dir": config["project"],
+            "source": config["source"],
             "project_ok": Path(config["project"]).is_dir(),
             "out_dir": config["out"],
             "hints": self._hints(),

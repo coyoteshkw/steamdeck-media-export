@@ -21,6 +21,7 @@ interface Status {
   url: string;
   token: string;
   project_dir: string;
+  source: string;
   project_ok: boolean;
   out_dir: string;
   hints: Record<string, string>;
@@ -33,6 +34,12 @@ const HINT_LABELS: Array<[string, string]> = [
   ["trash", "回收站"],
   ["preview", "预览缓存"],
 ];
+
+const SOURCE_LABELS: Record<string, string> = {
+  bundled: "内置（自包含）",
+  repo: "本地仓库",
+  custom: "自定义路径",
+};
 
 const small: CSSProperties = {
   fontSize: "11px",
@@ -202,6 +209,14 @@ function Content() {
           </PanelSectionRow>
         ) : null
       )}
+
+      <PanelSectionRow>
+        <Field label="代码来源" bottomSeparator="none" childrenLayout="below">
+          <div style={small}>
+            {SOURCE_LABELS[status?.source ?? ""] ?? "—"}　{status?.project_dir}
+          </div>
+        </Field>
+      </PanelSectionRow>
 
       {status?.project_ok === false ? (
         <PanelSectionRow>

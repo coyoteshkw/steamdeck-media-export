@@ -67,8 +67,9 @@ npm run build          # 产出 dist/index.js
 ## 安装 / 重载
 
 ```bash
-./install.sh           # 复制 plugin.json / package.json / main.py / dist 到插件目录（需 sudo）
-./reload.sh            # 安全重启 Decky
+./install.sh                   # 薄壳（B2）：复制插件本体到插件目录（需 sudo）
+./install.sh --self-contained  # 自包含（A）：额外把 steam_exporter/ 复制进 vendor/
+./reload.sh                    # 安全重启 Decky
 ```
 
 也可以优先用 Decky 设置里的「重载插件」按钮。
@@ -76,16 +77,28 @@ npm run build          # 产出 dist/index.js
 ## 打包分发
 
 ```bash
-./package.sh           # 产出 SteamMediaExport-v<版本>.zip
+./package.sh                    # 薄壳（B2）：SteamMediaExport-v<版本>.zip
+./package.sh --self-contained   # 自包含（A）：SteamMediaExport-v<版本>-selfcontained.zip
 ```
 
-ZIP 内结构：`SteamMediaExport/{plugin.json,package.json,main.py,dist/,README.md}`，
-符合 Decky「从 ZIP 安装」的要求（恰好一层 `插件名/plugin.json`）。
+| 模式 | 内容 | 适合 |
+|---|---|---|
+| 薄壳（默认） | 只插件本体（~48KB） | 本机 / 仓库也在同一路径的机器 |
+| 自包含 | 额外带 `vendor/steam_exporter/`（~500KB） | **分发给别人**，对方没有本仓库 |
+
+两者都符合 Decky「从 ZIP 安装」的要求（恰好一层 `插件名/plugin.json`）。
 安装：Decky 设置 → 开发者 → 从 ZIP 安装。
 
-> ⚠️ 本插件是「薄壳」，运行时依赖主程序仓库，默认路径
-> `~/code-study/steam-recording-exporter`。分发到别的机器时，对方需要把本仓库
-> 放在同一路径（或在设置里改 `project_dir`），并且机器上要有 `python3` 和 `ffmpeg`。
+**主程序来源的判定顺序**（面板「代码来源」会显示实际用的哪一个）：
+
+1. 设置里的 `project_dir`（自定义）
+2. 包内 `vendor/`（内置，只有自包含包才有）
+3. 默认仓库路径 `~/code-study/steam-recording-exporter`
+
+所以：**自包含包分发出去后不依赖仓库**；本机开发用薄壳包，改主程序后
+开关关开一次即可生效（无需重打包）。
+
+> ⚠️ 两种模式都要求目标机器有 `python3` 和 `ffmpeg`（SteamOS 自带）。
 
 ## 可调设置
 
@@ -94,6 +107,6 @@ ZIP 内结构：`SteamMediaExport/{plugin.json,package.json,main.py,dist/,README
 | 键 | 默认 | 说明 |
 |---|---|---|
 | `port` | `8787` | 服务端口 |
-| `project_dir` | `~/code-study/steam-recording-exporter` | 主程序路径 |
+| `project_dir` | `~/code-study/steam-recording-exporter` | 自定义主程序路径；留空则按「内置 → 仓库」顺序自动选 |
 | `out_dir` | `~/Videos/SteamExports` | 默认输出目录 |
 | `token` | `hello` | 访问令牌 |

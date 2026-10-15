@@ -2255,6 +2255,11 @@ const HINT_LABELS = [
     ["trash", "回收站"],
     ["preview", "预览缓存"],
 ];
+const SOURCE_LABELS = {
+    bundled: "内置（自包含）",
+    repo: "本地仓库",
+    custom: "自定义路径",
+};
 const small = {
     fontSize: "11px",
     lineHeight: 1.4,
@@ -2344,7 +2349,7 @@ function Content() {
                             } }) }) }) })) : null, SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.TextField, { label: "\u7AEF\u53E3", value: portInput, mustBeNumeric: true, disabled: busy, description: "\u9ED8\u8BA4 8787\uFF0C\u88AB\u5360\u7528\u65F6\u81EA\u52A8\u987A\u5EF6", onChange: (e) => {
                         portDirty.current = true;
                         setPortInput(e.target.value);
-                    } }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: busy || !portChanged, onClick: applyPort, children: running ? "应用端口并重启" : "保存端口" }) }), HINT_LABELS.map(([key, label]) => status?.hints?.[key] ? (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.Field, { label: label, bottomSeparator: "none", childrenLayout: "below", children: SP_JSX.jsx("div", { style: small, children: status.hints[key] }) }) }, key)) : null), status?.project_ok === false ? (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.Field, { label: "\u9879\u76EE\u76EE\u5F55", bottomSeparator: "none", childrenLayout: "below", children: SP_JSX.jsxs("div", { style: { ...small, color: "#ff9a9a" }, children: ["\u672A\u627E\u5230\uFF1A", status.project_dir] }) }) })) : null] }));
+                    } }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: busy || !portChanged, onClick: applyPort, children: running ? "应用端口并重启" : "保存端口" }) }), HINT_LABELS.map(([key, label]) => status?.hints?.[key] ? (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.Field, { label: label, bottomSeparator: "none", childrenLayout: "below", children: SP_JSX.jsx("div", { style: small, children: status.hints[key] }) }) }, key)) : null), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.Field, { label: "\u4EE3\u7801\u6765\u6E90", bottomSeparator: "none", childrenLayout: "below", children: SP_JSX.jsxs("div", { style: small, children: [SOURCE_LABELS[status?.source ?? ""] ?? "—", "\u3000", status?.project_dir] }) }) }), status?.project_ok === false ? (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.Field, { label: "\u9879\u76EE\u76EE\u5F55", bottomSeparator: "none", childrenLayout: "below", children: SP_JSX.jsxs("div", { style: { ...small, color: "#ff9a9a" }, children: ["\u672A\u627E\u5230\uFF1A", status.project_dir] }) }) })) : null] }));
 }
 var index = DFL.definePlugin(() => ({
     name: "SteamMediaExport",
