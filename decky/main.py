@@ -15,6 +15,7 @@ import os
 import socket
 import subprocess
 import threading
+import time
 from collections import deque
 from pathlib import Path
 from typing import Any, Optional
@@ -116,12 +117,29 @@ def _ip_rank(ip: str) -> int:
     return 3
 
 
-def pick_lan_ip() -> str:
+def _pick_lan_ip_uncached() -> str:
     ips = _lan_ips()
     if not ips:
         return "127.0.0.1"
     ips.sort(key=lambda ip: (_ip_rank(ip), ip))
     return ips[0]
+
+
+# 本机 IP 缓存：getaddrinfo(hostname) 会走 DNS，主机名不在 /etc/hosts 时
+# 网络切换/DNS 抽风可能阻塞数秒。前端每几秒轮询一次 get_status，
+# 这里加个短 TTL 缓存，免得反复解析（启动服务时会强制刷新）。
+_IP_CACHE_TTL = 30.0
+_ip_cache: Optional[tuple[float, str]] = None
+
+
+def pick_lan_ip(force: bool = False) -> str:
+    global _ip_cache
+    now = time.monotonic()
+    if not force and _ip_cache is not None and now - _ip_cache[0] < _IP_CACHE_TTL:
+        return _ip_cache[1]
+    ip = _pick_lan_ip_uncached()
+    _ip_cache = (now, ip)
+    return ip
 
 
 def _port_free(port: int) -> bool:
@@ -241,6 +259,8 @@ class Plugin:
 
     async def start_server(self, port: Optional[int] = None) -> dict:
         self.error = None
+        # 网络可能变了，重新探测一次本机 IP（并刷新缓存）
+        pick_lan_ip(force=True)
         config = self._config()
         project = Path(config["project"])
         if not project.is_dir():

@@ -16,6 +16,7 @@ if (api._version != API_VERSION) {
     console.warn(`[@decky/api] Requested API version ${API_VERSION} but the running loader only supports version ${api._version}. Some features may not work.`);
 }
 const call = api.call;
+const useQuickAccessVisible = api.useQuickAccessVisible;
 
 //---------------------------------------------------------------------
 //
@@ -2266,20 +2267,32 @@ function Content() {
     const [status, setStatus] = SP_REACT.useState(null);
     const [busy, setBusy] = SP_REACT.useState(false);
     const [portInput, setPortInput] = SP_REACT.useState("8787");
+    const visible = useQuickAccessVisible();
+    // 用户正在改端口时，别被轮询结果覆盖
+    const portDirty = SP_REACT.useRef(false);
     const refresh = async () => {
         const next = await call("get_status");
         setStatus(next);
-        setPortInput(String(next.configured_port ?? next.port));
+        if (!portDirty.current) {
+            setPortInput(String(next.configured_port ?? next.port));
+        }
         return next;
     };
+    const running = !!status?.running;
     SP_REACT.useEffect(() => {
         refresh();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+    SP_REACT.useEffect(() => {
+        // 只在「侧栏可见 + 服务在跑」时轮询：关掉面板或服务已停都不需要轮询
+        if (!visible || !running)
+            return;
         const timer = window.setInterval(() => {
             refresh();
         }, 4000);
         return () => window.clearInterval(timer);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [visible, running]);
     const qrDataUrl = SP_REACT.useMemo(() => {
         if (!status?.url)
             return "";
@@ -2302,6 +2315,7 @@ function Content() {
             else {
                 await call("stop_server");
             }
+            portDirty.current = false;
             await refresh();
         }
         finally {
@@ -2312,20 +2326,23 @@ function Content() {
         setBusy(true);
         try {
             await call("set_port", Number(portInput) || 8787);
+            portDirty.current = false;
             await refresh();
         }
         finally {
             setBusy(false);
         }
     };
-    const running = !!status?.running;
     const portChanged = status ? Number(portInput) !== status.configured_port : false;
     return (SP_JSX.jsxs(DFL.PanelSection, { title: "Steam \u5A92\u4F53\u5BFC\u51FA", spinner: busy, children: [SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ToggleField, { label: "\u542F\u7528\u670D\u52A1", description: running ? `运行中 · ${status?.ip}:${status?.port}` : "已停止", checked: running, disabled: busy || status?.project_ok === false, onChange: onToggle }) }), status?.error ? (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.Field, { label: "\u63D0\u793A", bottomSeparator: "none", childrenLayout: "below", children: SP_JSX.jsx("div", { style: { ...small, color: "#ff9a9a" }, children: status.error }) }) })) : null, SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.Field, { label: "\u624B\u673A\u8BBF\u95EE\u5730\u5740", bottomSeparator: "none", childrenLayout: "below", children: SP_JSX.jsxs("div", { style: { ...small, opacity: running ? 0.9 : 0.45 }, children: [status?.url || "—", running ? "" : "　（未启动，打开上面的开关后可用）"] }) }) }), running && qrDataUrl ? (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.Field, { label: "\u626B\u7801\u6253\u5F00", bottomSeparator: "none", childrenLayout: "below", children: SP_JSX.jsx("div", { style: { display: "flex", justifyContent: "center", width: "100%" }, children: SP_JSX.jsx("img", { src: qrDataUrl, alt: "\u8BBF\u95EE\u4E8C\u7EF4\u7801", width: 170, height: 170, style: {
                                 background: "#fff",
                                 padding: "6px",
                                 borderRadius: "6px",
                                 imageRendering: "pixelated",
-                            } }) }) }) })) : null, SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.TextField, { label: "\u7AEF\u53E3", value: portInput, mustBeNumeric: true, disabled: busy, description: "\u9ED8\u8BA4 8787\uFF0C\u88AB\u5360\u7528\u65F6\u81EA\u52A8\u987A\u5EF6", onChange: (e) => setPortInput(e.target.value) }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: busy || !portChanged, onClick: applyPort, children: running ? "应用端口并重启" : "保存端口" }) }), HINT_LABELS.map(([key, label]) => status?.hints?.[key] ? (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.Field, { label: label, bottomSeparator: "none", childrenLayout: "below", children: SP_JSX.jsx("div", { style: small, children: status.hints[key] }) }) }, key)) : null), status?.project_ok === false ? (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.Field, { label: "\u9879\u76EE\u76EE\u5F55", bottomSeparator: "none", childrenLayout: "below", children: SP_JSX.jsxs("div", { style: { ...small, color: "#ff9a9a" }, children: ["\u672A\u627E\u5230\uFF1A", status.project_dir] }) }) })) : null] }));
+                            } }) }) }) })) : null, SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.TextField, { label: "\u7AEF\u53E3", value: portInput, mustBeNumeric: true, disabled: busy, description: "\u9ED8\u8BA4 8787\uFF0C\u88AB\u5360\u7528\u65F6\u81EA\u52A8\u987A\u5EF6", onChange: (e) => {
+                        portDirty.current = true;
+                        setPortInput(e.target.value);
+                    } }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: busy || !portChanged, onClick: applyPort, children: running ? "应用端口并重启" : "保存端口" }) }), HINT_LABELS.map(([key, label]) => status?.hints?.[key] ? (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.Field, { label: label, bottomSeparator: "none", childrenLayout: "below", children: SP_JSX.jsx("div", { style: small, children: status.hints[key] }) }) }, key)) : null), status?.project_ok === false ? (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.Field, { label: "\u9879\u76EE\u76EE\u5F55", bottomSeparator: "none", childrenLayout: "below", children: SP_JSX.jsxs("div", { style: { ...small, color: "#ff9a9a" }, children: ["\u672A\u627E\u5230\uFF1A", status.project_dir] }) }) })) : null] }));
 }
 var index = DFL.definePlugin(() => ({
     name: "SteamMediaExport",

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import {
   ButtonItem,
@@ -10,7 +10,7 @@ import {
   definePlugin,
   staticClasses,
 } from "@decky/ui";
-import { call } from "@decky/api";
+import { call, useQuickAccessVisible } from "@decky/api";
 import qrcode from "qrcode-generator";
 
 interface Status {
@@ -52,22 +52,35 @@ function Content() {
   const [status, setStatus] = useState<Status | null>(null);
   const [busy, setBusy] = useState(false);
   const [portInput, setPortInput] = useState("8787");
+  const visible = useQuickAccessVisible();
+  // 用户正在改端口时，别被轮询结果覆盖
+  const portDirty = useRef(false);
 
   const refresh = async () => {
     const next = await call<[], Status>("get_status");
     setStatus(next);
-    setPortInput(String(next.configured_port ?? next.port));
+    if (!portDirty.current) {
+      setPortInput(String(next.configured_port ?? next.port));
+    }
     return next;
   };
 
+  const running = !!status?.running;
+
   useEffect(() => {
     refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    // 只在「侧栏可见 + 服务在跑」时轮询：关掉面板或服务已停都不需要轮询
+    if (!visible || !running) return;
     const timer = window.setInterval(() => {
       refresh();
     }, 4000);
     return () => window.clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [visible, running]);
 
   const qrDataUrl = useMemo(() => {
     if (!status?.url) return "";
@@ -89,6 +102,7 @@ function Content() {
       } else {
         await call<[], Status>("stop_server");
       }
+      portDirty.current = false;
       await refresh();
     } finally {
       setBusy(false);
@@ -99,13 +113,13 @@ function Content() {
     setBusy(true);
     try {
       await call<[number], Status>("set_port", Number(portInput) || 8787);
+      portDirty.current = false;
       await refresh();
     } finally {
       setBusy(false);
     }
   };
 
-  const running = !!status?.running;
   const portChanged = status ? Number(portInput) !== status.configured_port : false;
 
   return (
@@ -165,7 +179,10 @@ function Content() {
           mustBeNumeric
           disabled={busy}
           description="默认 8787，被占用时自动顺延"
-          onChange={(e) => setPortInput(e.target.value)}
+          onChange={(e) => {
+            portDirty.current = true;
+            setPortInput(e.target.value);
+          }}
         />
       </PanelSectionRow>
 
