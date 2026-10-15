@@ -193,6 +193,17 @@
   </div>
 </div>
 
+<div class="modal" id="preview-modal" hidden>
+  <div class="modal-box preview-box">
+    <div class="preview-head">
+      <span id="preview-title">预览</span>
+      <button class="icon-btn" id="preview-close" title="关闭">✕</button>
+    </div>
+    <video id="preview-video" controls autoplay muted loop playsinline></video>
+    <div class="preview-hint" id="preview-hint">正在生成预览…</div>
+  </div>
+</div>
+
 <div class="toast" id="toast" hidden></div>
 
 <script src="/static/app.js"></script>

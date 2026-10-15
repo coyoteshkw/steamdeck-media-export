@@ -256,6 +256,9 @@ def cmd_serve(args) -> int:
         cache_ttl=max(0.0, args.cache_ttl) * 60,
         cache_max=max(1, int(args.cache_max * 1024**3)),
         trash_dir=Path(args.trash).expanduser() if args.trash else None,
+        preview_dir=Path(args.preview_cache).expanduser() if args.preview_cache else None,
+        preview_ttl=max(0.0, args.preview_ttl) * 86400,
+        preview_max=max(1, int(args.preview_max * 1024**2)),
     )
 
 
@@ -364,6 +367,12 @@ def build_parser() -> argparse.ArgumentParser:
                          help="下载缓存容量上限（GB，默认 5）")
     p_serve.add_argument("--trash", default=None,
                          help="删除时的回收站目录（默认 ~/.local/share/steam-exporter/trash）")
+    p_serve.add_argument("--preview-cache", default=None,
+                         help="预览缓存目录（默认 ~/.cache/steam-exporter/previews）")
+    p_serve.add_argument("--preview-ttl", type=float, default=7,
+                         help="预览缓存保留天数（默认 7）")
+    p_serve.add_argument("--preview-max", type=float, default=300,
+                         help="预览缓存上限 MB（默认 300）")
     p_serve.set_defaults(func=cmd_serve)
 
     return parser

@@ -20,6 +20,7 @@ from urllib.parse import parse_qs, quote, urlparse
 from . import __version__
 from .download_cache import DownloadCache
 from .model import KIND_CLIP
+from .preview import PreviewCache, generate_preview, generate_thumbnail
 from .trash import Trash, dir_size
 from .exporter import (
     DEFAULT_TEMPLATE,
@@ -242,6 +243,7 @@ class AppState:
         token: str | None,
         download_cache: DownloadCache | None = None,
         trash: Trash | None = None,
+        preview_cache: PreviewCache | None = None,
     ) -> None:
         self.resolver = build_resolver()
         self.default_user = default_user
@@ -249,6 +251,7 @@ class AppState:
         self.token = token
         self.download_cache = download_cache
         self.trash = trash
+        self.preview_cache = preview_cache
         self.jobs = Jobs()
         self._cache: dict[str, tuple[float, list]] = {}
         self._cache_lock = threading.Lock()
@@ -291,11 +294,14 @@ class Handler(BaseHTTPRequestHandler):
         self._responded = True
         self.wfile.write(body)
 
-    def _send_bytes(self, body: bytes, content_type: str, status: int = 200) -> None:
+    def _send_bytes(self, body: bytes, content_type: str, status: int = 200, cache: str | None = None) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
+        if cache:
+            self.send_header("Cache-Control", cache)
         self.end_headers()
+        self._responded = True
         self.wfile.write(body)
 
     def _error(self, status: int, message: str) -> None:
@@ -379,6 +385,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._handle_download(query)
         if path == "/api/download/file":
             return self._handle_download_file(query)
+        if path.startswith("/api/thumb/"):
+            return self._handle_thumb(path[len("/api/thumb/") :], query)
+        if path.startswith("/api/preview/"):
+            return self._handle_preview(path[len("/api/preview/") :], query)
         if path.startswith("/api/icon/"):
             return self._handle_icon(path[len("/api/icon/"):])
         if path == "/api/jobs":
@@ -432,6 +442,9 @@ class Handler(BaseHTTPRequestHandler):
                 if self.state.download_cache
                 else None,
                 "trash": self.state.trash.stats() if self.state.trash else None,
+                "preview": self.state.preview_cache.stats()
+                if self.state.preview_cache
+                else None,
                 "steam_running": _steam_running(),
             }
         )
@@ -625,7 +638,7 @@ class Handler(BaseHTTPRequestHandler):
         filename = cache.get_name(key) or path.name
         self._serve_file(path, filename)
 
-    def _serve_file(self, path: Path, filename: str) -> None:
+    def _serve_file(self, path: Path, filename: str, attachment: bool = True) -> None:
         """以普通文件方式发送（带 Content-Length 与 Range，可续传）。"""
         try:
             size = path.stat().st_size
@@ -637,7 +650,10 @@ class Handler(BaseHTTPRequestHandler):
         length = end - start + 1
         self.send_response(206 if partial else 200)
         self.send_header("Content-Type", "video/mp4")
-        self.send_header("Content-Disposition", _content_disposition(filename))
+        if attachment:
+            self.send_header("Content-Disposition", _content_disposition(filename))
+        else:
+            self.send_header("Content-Disposition", "inline")
         self.send_header("Accept-Ranges", "bytes")
         self.send_header("Content-Length", str(length))
         if partial:
@@ -659,10 +675,11 @@ class Handler(BaseHTTPRequestHandler):
             pass
 
     def _handle_cache_clear(self, payload: dict) -> None:
-        cache = self.state.download_cache
-        if cache is None:
-            return self._error(500, "下载缓存未启用")
-        removed = cache.clear()
+        removed = 0
+        if self.state.download_cache is not None:
+            removed += self.state.download_cache.clear()
+        if self.state.preview_cache is not None:
+            removed += self.state.preview_cache.clear()
         self._send_json({"ok": True, "removed": removed})
 
     def _handle_delete(self, payload: dict) -> None:
@@ -739,6 +756,59 @@ class Handler(BaseHTTPRequestHandler):
         else:
             freed = trash.purge(str(payload.get("id", "")))
         self._send_json({"ok": True, "freed": freed, "stats": trash.stats()})
+
+    def _find_source(self, source_id: str, query: dict):
+        user = query.get("user", ["auto"])[0]
+        return next(
+            (s for s in self.state.sources(user) if s.source_id == source_id), None
+        )
+
+    def _handle_thumb(self, source_id: str, query: dict) -> None:
+        source = self._find_source(source_id, query)
+        if source is None:
+            return self._error(404, "找不到录制")
+        # 剪辑直接用 Steam 自带的封面
+        if source.thumbnail is not None and source.thumbnail.is_file():
+            try:
+                body = source.thumbnail.read_bytes()
+            except OSError:
+                body = b""
+            if body:
+                return self._send_bytes(
+                    body, "image/jpeg", cache="public, max-age=86400"
+                )
+        cache = self.state.preview_cache
+        if cache is None:
+            return self._error(404, "无缩略图")
+        cache.cleanup()
+        key = cache.key(source, "thumb")
+        path = cache.path_for(key, "jpg")
+        if not cache.has(key, "jpg"):
+            if not generate_thumbnail(source, path):
+                return self._error(404, "无法生成缩略图")
+        cache.touch(key, "jpg")
+        try:
+            body = path.read_bytes()
+        except OSError:
+            return self._error(500, "读取失败")
+        self._send_bytes(body, "image/jpeg", cache="public, max-age=86400")
+
+    def _handle_preview(self, source_id: str, query: dict) -> None:
+        source = self._find_source(source_id, query)
+        if source is None:
+            return self._error(404, "找不到录制")
+        cache = self.state.preview_cache
+        if cache is None:
+            return self._error(500, "预览未启用")
+        cache.cleanup()
+        key = cache.key(source, "preview")
+        path = cache.path_for(key, "mp4")
+        if not cache.has(key, "mp4"):
+            if not generate_preview(source, path):
+                return self._error(404, "无法生成预览")
+        cache.touch(key, "mp4")
+        filename = download_filename(source).replace(".mp4", " 预览.mp4")
+        self._serve_file(path, filename, attachment=False)
 
     def _handle_icon(self, appid: str) -> None:
         art = find_game_art(appid.strip())
@@ -930,6 +1000,13 @@ def default_trash_dir() -> Path:
 
     base = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local/share")
     return Path(base) / "steam-exporter" / "trash"
+
+
+def default_preview_dir() -> Path:
+    import os
+
+    base = os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
+    return Path(base) / "steam-exporter" / "previews"
 
 
 def _steam_running() -> bool:
@@ -1218,6 +1295,9 @@ def serve(
     cache_ttl: float = 600.0,
     cache_max: int = 5 * 1024**3,
     trash_dir: Path | None = None,
+    preview_dir: Path | None = None,
+    preview_ttl: float = 7 * 86400.0,
+    preview_max: int = 300 * 1024**2,
 ) -> int:
     from .util import raise_nofile_limit
 
@@ -1227,7 +1307,12 @@ def serve(
     download_cache.cleanup()
     trash_root = trash_dir or default_trash_dir()
     trash = Trash(trash_root)
-    Handler.state = AppState(default_user, default_out, token, download_cache, trash)
+    preview_root = preview_dir or default_preview_dir()
+    preview_cache = PreviewCache(preview_root, ttl=preview_ttl, max_bytes=preview_max)
+    preview_cache.cleanup()
+    Handler.state = AppState(
+        default_user, default_out, token, download_cache, trash, preview_cache
+    )
 
     try:
         httpd = ThreadingHTTPServer((host, port), Handler)
@@ -1251,6 +1336,7 @@ def serve(
     print(f"  输出：{default_out}")
     print(f"  下载缓存：{cache_root}（TTL {int(cache_ttl/60)} 分钟，上限 {cache_max//1024**3}GB）")
     print(f"  回收站：{trash_root}")
+    print(f"  预览缓存：{preview_root}（TTL {int(preview_ttl/86400)} 天，上限 {preview_max//1024**2}MB）")
     if host not in ("127.0.0.1", "localhost"):
         if token:
             print("  已启用访问令牌，访问时需带 ?token=…")

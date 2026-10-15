@@ -121,7 +121,7 @@ function applySummary(s) {
     profile.appendChild(new Option(item.label, item.id));
   }
   if (profile.options.length) profile.value = "fast";
-  updateCacheInfo(s.cache);
+  updateCacheInfo(s.cache, s.preview);
   state.steamRunning = !!s.steam_running;
   updateTrashInfo(s.trash);
 
@@ -161,6 +161,10 @@ function bindEvents() {
   el("trash-purge").addEventListener("click", purgeTrash);
   el("confirm-cancel").addEventListener("click", closeDeleteConfirm);
   el("confirm-ok").addEventListener("click", confirmDelete);
+  el("preview-close").addEventListener("click", closePreview);
+  el("preview-modal").addEventListener("click", (event) => {
+    if (event.target.id === "preview-modal") closePreview();
+  });
 }
 
 function syncModeFields() {
@@ -350,12 +354,27 @@ function renderItemRow(item) {
     updateSelectionInfo();
   });
 
+  const thumb = document.createElement("img");
+  thumb.className = "item-thumb";
+  thumb.alt = "";
+  thumb.loading = "lazy";
+  thumb.title = "点击预览";
+  thumb.dataset.src = withToken(
+    `/api/thumb/${encodeURIComponent(item.id)}?user=${encodeURIComponent(el("user-select").value || "auto")}`);
+  thumb.addEventListener("click", (event) => {
+    event.stopPropagation();
+    openPreview(item);
+  });
+  thumb.addEventListener("error", () => { thumb.classList.add("missing"); });
+  ensureThumbObserver().observe(thumb);
+
   const kind = document.createElement("span");
   kind.className = `kind ${item.kind}`;
   kind.textContent = item.kind_cn;
 
   row.append(
     check,
+    thumb,
     kind,
     span("item-time", item.recorded_display),
     span("item-dur", fmtDur(item.duration_s)),
@@ -401,6 +420,50 @@ function renderItemRow(item) {
   action.appendChild(remove);
   row.appendChild(action);
   return row;
+}
+
+let thumbObserver = null;
+
+function ensureThumbObserver() {
+  if (thumbObserver) return thumbObserver;
+  thumbObserver = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        const img = entry.target;
+        if (img.dataset.src && !img.src) img.src = img.dataset.src;
+        thumbObserver.unobserve(img);
+      }
+    },
+    { rootMargin: "150px" }
+  );
+  return thumbObserver;
+}
+
+function openPreview(item) {
+  const user = el("user-select").value || "auto";
+  el("preview-title").textContent = `${item.game} · ${item.recorded_display}`;
+  const video = el("preview-video");
+  const hint = el("preview-hint");
+  hint.hidden = false;
+  hint.textContent = "正在生成预览…";
+  video.src = withToken(
+    `/api/preview/${encodeURIComponent(item.id)}?user=${encodeURIComponent(user)}`);
+  video.load();
+  video.onloadeddata = () => { hint.hidden = true; };
+  video.onerror = () => {
+    hint.hidden = false;
+    hint.textContent = "无法生成预览（可能是录制损坏）";
+  };
+  el("preview-modal").hidden = false;
+}
+
+function closePreview() {
+  const video = el("preview-video");
+  video.pause();
+  video.removeAttribute("src");
+  video.load();
+  el("preview-modal").hidden = true;
 }
 
 function downloadItem(item) {
@@ -452,19 +515,18 @@ function triggerFileDownload(key) {
   triggerUrl(withToken(`/api/download/file?key=${encodeURIComponent(key)}`));
 }
 
-function updateCacheInfo(cache) {
+function updateCacheInfo(cache, preview) {
   const node = el("cache-info");
-  if (!cache) {
-    node.textContent = "缓存：未启用";
-    return;
-  }
-  node.textContent = `缓存：${cache.count} 个 / ${fmtSize(cache.bytes)}`;
+  const parts = [];
+  if (cache) parts.push(`下载 ${cache.count}项/${fmtSize(cache.bytes)}`);
+  if (preview) parts.push(`预览 ${preview.count}项/${fmtSize(preview.bytes)}`);
+  node.textContent = parts.length ? "缓存：" + parts.join("，") : "缓存：未启用";
 }
 
 async function clearCache() {
   try {
     const res = await api("/api/cache/clear", { method: "POST" });
-    el("cache-info").textContent = "缓存：0 个 / 0 B";
+    el("cache-info").textContent = "缓存：0 项 / 0 B";
     toast(`已清理 ${res.removed} 个缓存文件`);
   } catch (err) {
     toast("清理失败：" + err.message);
