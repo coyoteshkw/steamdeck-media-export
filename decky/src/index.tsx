@@ -130,11 +130,14 @@ function Content() {
 
       <PanelSectionRow>
         <Field label="手机访问地址" bottomSeparator="none" childrenLayout="below">
-          <div style={small}>{status?.url || "—"}</div>
+          <div style={{ ...small, opacity: running ? 0.9 : 0.45 }}>
+            {status?.url || "—"}
+            {running ? "" : "　（未启动，打开上面的开关后可用）"}
+          </div>
         </Field>
       </PanelSectionRow>
 
-      {qrDataUrl ? (
+      {running && qrDataUrl ? (
         <PanelSectionRow>
           <Field label="扫码打开" bottomSeparator="none" childrenLayout="below">
             <div style={{ display: "flex", justifyContent: "center", width: "100%" }}>
