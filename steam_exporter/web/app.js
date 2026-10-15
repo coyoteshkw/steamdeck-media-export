@@ -125,7 +125,7 @@ function applySummary(s) {
   const userSelect = el("user-select");
   userSelect.innerHTML = "";
   for (const user of s.users) {
-    const label = (user.primary ? "★ " : "") + user.id + ` · ${user.clips}`;
+    const label = user.id + (user.primary ? "（主账号）" : "") + ` · ${user.clips} 剪辑`;
     userSelect.appendChild(new Option(label, user.id));
   }
   if (s.users.some((u) => u.id === s.default_user)) userSelect.value = s.default_user;
@@ -229,9 +229,13 @@ function bindEvents() {
     if (event.target.id === "viewer-modal") closeViewer();
   });
 
-  // 手机抽屉
+  // 手机抽屉（顶栏按钮按当前视图打开对应侧栏）
   for (const btn of document.querySelectorAll(".drawer-toggle")) {
-    btn.addEventListener("click", () => openDrawer(el(btn.dataset.sidebar)));
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.sidebar
+        || (state.view === "screenshots" ? "shot-sidebar" : "rec-sidebar");
+      openDrawer(el(id));
+    });
   }
   for (const btn of document.querySelectorAll(".sidebar-close")) {
     btn.addEventListener("click", closeDrawer);
@@ -461,15 +465,18 @@ function renderItemRow(item) {
   kind.className = `kind ${item.kind}`;
   kind.textContent = item.kind_cn;
 
+  const head = document.createElement("div");
+  head.className = "item-head";
+  head.append(kind, span("item-time", item.recorded_display));
+
   const meta = document.createElement("div");
   meta.className = "item-meta";
   meta.append(
-    span("item-time", item.recorded_display),
     span("item-dur", fmtDur(item.duration_s)),
     span("item-size", fmtSize(item.size)),
   );
 
-  row.append(check, thumb, kind, meta, span("item-id", item.id));
+  row.append(check, thumb, head, meta, span("item-id", item.id));
 
   const status = document.createElement("span");
   status.className = "item-status";

@@ -67,35 +67,21 @@ h1 { font-size: 16px; margin: 0; font-weight: 650; letter-spacing: .01em; white-
   z-index: 30;
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 10px 18px;
+  gap: 12px;
+  padding: 9px 16px;
   min-height: var(--appbar-h);
-  background: rgba(13, 16, 22, .82);
+  background: rgba(13, 16, 22, .85);
   backdrop-filter: blur(14px) saturate(140%);
   border-bottom: 1px solid var(--border);
 }
-.brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
-.logo {
-  font-size: 22px;
-  width: 38px;
-  height: 38px;
-  display: grid;
-  place-items: center;
-  border-radius: var(--radius-md);
-  background: linear-gradient(145deg, var(--surface-3), var(--surface));
-  border: 1px solid var(--border);
-  flex: none;
-}
-.brand-text { min-width: 0; }
-.sub {
-  color: var(--muted);
-  font-size: 12px;
-  white-space: nowrap;
-  overflow: hidden;
+.appbar-info { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.account { display: flex; align-items: center; }
+.account select {
+  width: 168px;
+  max-width: 100%;
+  padding: 7px 10px;
   text-overflow: ellipsis;
-  margin-top: 1px;
 }
-.appbar-right { display: flex; align-items: center; gap: 12px; margin-left: auto; }
 
 /* --------------------------------------------------------------------------
    分段切换（顶栏视图 / 截图分类）
@@ -354,9 +340,9 @@ img.game-thumb { display: block; }
 .group-items { background: #0d1016; }
 .item-row {
   display: grid;
-  grid-template-columns: 20px 60px 74px max-content minmax(0, 1fr) 76px 104px;
-  grid-template-areas: "check thumb kind meta id status action";
-  gap: 10px;
+  grid-template-columns: 20px 60px max-content max-content minmax(0, 1fr) 76px 104px;
+  grid-template-areas: "check thumb head meta id status action";
+  gap: 12px;
   align-items: center;
   padding: 7px 12px 7px 42px;
   font-size: 13px;
@@ -380,6 +366,7 @@ img.game-thumb { display: block; }
 }
 .item-thumb:hover { border-color: var(--accent); }
 .item-thumb.missing { opacity: .35; }
+.item-head { grid-area: head; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .item-time { white-space: nowrap; color: var(--text-2); }
 .item-dur, .item-size { color: var(--muted); white-space: nowrap; }
 .item-meta { grid-area: meta; display: flex; gap: 10px; min-width: 0; }
@@ -404,7 +391,6 @@ img.game-thumb { display: block; }
 .item-row.failed .item-action { background: #1a1212; }
 
 .kind {
-  grid-area: kind;
   font-size: 12px;
   padding: 2px 8px;
   border-radius: 6px;
@@ -426,8 +412,8 @@ img.game-thumb { display: block; }
   border: 1px solid var(--border);
   color: var(--text-2);
   border-radius: var(--radius-sm);
-  width: 32px;
-  height: 28px;
+  width: 30px;
+  height: 26px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -451,16 +437,14 @@ img.game-thumb { display: block; }
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
   gap: 12px;
-  align-content: flex-start;
+  align-content: start;
   padding: 2px;
 }
 .shot-game {
   position: relative;
-  flex: 0 0 auto;
-  width: 190px;
   padding: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -490,18 +474,16 @@ img.game-thumb { display: block; }
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-auto-rows: 94px;
   gap: 8px;
-  align-content: flex-start;
+  align-content: start;
   padding: 2px;
 }
-.shot-more { flex: 0 0 100%; }
+.shot-more { grid-column: 1 / -1; }
 .shot-tile {
   position: relative;
-  flex: 0 0 auto;
-  width: 154px;
-  height: 96px; /* 154 * 10/16 */
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   overflow: hidden;
@@ -735,18 +717,19 @@ body.job-active .layout { padding-bottom: 100px; }
 
   /* 录制行 → 两行卡片 */
   .item-row {
-    grid-template-columns: auto 54px minmax(0, 1fr) auto;
+    grid-template-columns: 18px 96px minmax(0, 1fr) auto;
     grid-template-areas:
-      "check thumb kind   action"
+      "check thumb head   head"
       "check thumb meta   action"
-      "check thumb status action";
-    gap: 3px 10px;
+      "check thumb status status";
+    gap: 4px 10px;
     padding: 10px 12px;
     font-size: 13px;
   }
-  .item-thumb { width: 54px; height: 31px; }
-  .item-meta { flex-wrap: wrap; gap: 3px 10px; }
-  .item-meta .item-time { font-size: 12px; }
+  .item-thumb { width: 96px; height: 54px; }
+  .item-head { flex-wrap: wrap; gap: 4px 8px; }
+  .item-time { font-size: 12px; }
+  .item-meta { gap: 10px; }
   .item-meta .item-dur,
   .item-meta .item-size { width: auto; text-align: left; font-size: 12px; }
   .item-id { display: none; }
@@ -755,6 +738,7 @@ body.job-active .layout { padding-bottom: 100px; }
     position: static;
     background: none;
     padding-left: 0;
+    justify-content: flex-end;
   }
   .item-row:hover .item-action,
   .item-row.running .item-action,
@@ -764,10 +748,9 @@ body.job-active .layout { padding-bottom: 100px; }
   body.job-active .layout { padding-bottom: 170px; }
   .jobbar-main { flex-wrap: wrap; gap: 10px; }
   .jobbar-actions { width: 100%; justify-content: flex-end; }
-  .shot-games { gap: 10px; }
-  .shot-game { width: 168px; }
+  .shot-games { grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 10px; }
   .shot-game-thumb { height: 94px; }
-  .shot-tile { width: 140px; height: 88px; }
+  .shot-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); grid-auto-rows: 82px; }
 }
 
 /* ==========================================================================
@@ -776,26 +759,13 @@ body.job-active .layout { padding-bottom: 100px; }
 @media (max-width: 720px) {
   :root { --gap: 10px; }
 
-  .appbar {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas:
-      "brand account"
-      "tabs  tabs";
-    gap: 10px;
-    padding: 10px 12px;
-  }
-  .brand { grid-area: brand; min-width: 0; }
-  .brand-text { min-width: 0; overflow: hidden; }
-  h1 { font-size: 15px; }
-  .sub { font-size: 11px; }
+  .appbar { gap: 8px; padding: 8px 10px; min-height: 0; }
+  .appbar-info { display: none; }
   #ffmpeg-badge { display: none; }
-  .appbar-right { grid-area: account; margin-left: 0; gap: 8px; }
-  .appbar-right .field.inline > span { display: none; }
-  .appbar-right .field.inline select { min-width: 0; width: auto; max-width: 42vw; }
-  .tabs { grid-area: tabs; width: 100%; }
-  .tabs .tab { flex: 1; }
-  .toolbar .drawer-toggle { flex: 0 0 auto; }
+  .tabs { flex: 1; min-width: 0; }
+  .tabs .tab { flex: 1; padding: 6px 8px; }
+  .drawer-toggle { flex: 0 0 auto; }
+  .account select { width: 120px; padding: 7px 8px; font-size: 13px; }
 
   .layout { padding: 10px; }
   .card { padding: 13px; }
@@ -805,16 +775,13 @@ body.job-active .layout { padding-bottom: 100px; }
   .toolbar .tabs .tab { flex: 1; }
   .shot-title { max-width: 100%; flex: 1 1 100%; }
 
-  .item-id { display: none; }
-  .item-row { padding: 10px; gap: 5px 9px; }
-  .icon-btn { width: 38px; height: 34px; }
-  .item-action { gap: 8px; }
+  .item-row { padding: 9px 10px; gap: 3px 9px; }
+  .item-thumb { width: 88px; height: 50px; }
+  .item-action { gap: 6px; }
 
-  .shot-games { gap: 8px; }
-  .shot-game { width: 150px; }
+  .shot-games { grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 8px; }
   .shot-game-thumb { height: 84px; }
-  .shot-grid { gap: 6px; }
-  .shot-tile { width: 104px; height: 65px; }
+  .shot-grid { grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); grid-auto-rows: 72px; gap: 6px; }
 
   .viewer-nav { width: 42px; height: 42px; font-size: 26px; }
   .toast { bottom: 16px; padding: 10px 16px; }
@@ -824,9 +791,10 @@ body.job-active .layout { padding-bottom: 100px; }
 
 /* 超窄屏 */
 @media (max-width: 400px) {
-  .shot-game { width: 138px; }
+  .shot-games { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
   .shot-game-thumb { height: 78px; }
-  .shot-tile { width: 92px; height: 58px; }
+  .shot-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); grid-auto-rows: 64px; }
+  .account select { width: 104px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

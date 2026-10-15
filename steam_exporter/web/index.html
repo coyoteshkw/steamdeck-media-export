@@ -10,24 +10,17 @@
 </head>
 <body>
 <header class="appbar">
-  <div class="brand">
-    <span class="logo">🎬</span>
-    <div class="brand-text">
-      <h1>Steam 媒体导出</h1>
-      <div class="sub" id="summary-line">加载中…</div>
-    </div>
-  </div>
   <nav class="tabs" id="view-tabs">
     <button class="tab active" data-view="recordings">录像</button>
     <button class="tab" data-view="screenshots">截图</button>
   </nav>
-  <div class="appbar-right">
-    <span id="ffmpeg-badge" class="badge"></span>
-    <label class="field inline">
-      <span>账号</span>
-      <select id="user-select"></select>
-    </label>
-  </div>
+  <button class="btn small drawer-toggle" id="app-drawer" title="筛选 / 设置">☰ 筛选</button>
+  <span class="spacer"></span>
+  <span class="appbar-info muted" id="summary-line"></span>
+  <span id="ffmpeg-badge" class="badge"></span>
+  <label class="account" title="账号">
+    <select id="user-select" aria-label="账号"></select>
+  </label>
 </header>
 
 <div class="layout" id="view-recordings">
@@ -147,7 +140,6 @@
 
   <main class="main">
     <div class="toolbar">
-      <button class="btn small drawer-toggle" data-sidebar="rec-sidebar">☰ 筛选 / 设置</button>
       <label class="checkbox inline"><input type="checkbox" id="select-all"><span>全选</span></label>
       <span class="muted" id="selection-info">已选 0 条</span>
       <label class="field inline compact">
@@ -267,7 +259,6 @@
 
   <main class="main">
     <div class="toolbar" id="shot-toolbar">
-      <button class="btn small drawer-toggle" data-sidebar="shot-sidebar">☰ 筛选</button>
       <button class="btn small" id="shot-back" hidden>← 返回</button>
       <span class="shot-title" id="shot-title">全部截图</span>
       <span class="muted" id="shot-info"></span>
