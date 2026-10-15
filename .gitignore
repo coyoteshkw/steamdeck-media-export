@@ -1,0 +1,10 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# 导出产物
+*.mp4
+.steam_exporter_manifest.json
