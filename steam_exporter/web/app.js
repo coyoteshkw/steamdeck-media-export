@@ -218,6 +218,7 @@ function bindEvents() {
     openDeleteConfirm(selectedShotItems().map((s) => s.id), "screenshot"));
   el("selbar-download").addEventListener("click", () => downloadShots(selectedShotItems()));
   el("selbar-clear").addEventListener("click", clearShotSelection);
+  el("selbar-select").addEventListener("click", () => setShotSelectMode(!state.shotSelectMode));
   el("selbar-delete").addEventListener("click", () =>
     openDeleteConfirm(selectedShotItems().map((s) => s.id), "screenshot"));
 
@@ -1100,9 +1101,7 @@ function switchView(view) {
   }
   el("view-recordings").hidden = view !== "recordings";
   el("view-screenshots").hidden = view !== "screenshots";
-  const selActive = view === "screenshots" && state.shotSelectMode;
-  el("shot-selbar").hidden = !selActive;
-  document.body.classList.toggle("sel-active", selActive);
+  updateSelbar();
   if (view === "screenshots" && !state.shotLoaded) {
     state.shotLoaded = true;
     loadScreenshots();
@@ -1229,6 +1228,7 @@ function renderShotGames(data) {
     `${data.count} 个游戏 · ${data.shots} 张 · ${fmtSize(data.total_size)}`;
   el("shot-empty").hidden = state.shotGames.length > 0;
   for (const game of state.shotGames) wrap.appendChild(renderShotGameCard(game));
+  updateSelbar();
 }
 
 function renderShotGameCard(game) {
@@ -1330,6 +1330,7 @@ function renderShotGrid(reset = true) {
     });
     grid.appendChild(more);
   }
+  updateSelbar();
   updateShotSelection();
 }
 
@@ -1382,9 +1383,22 @@ function setShotSelectMode(on) {
   el("shot-download-selected").hidden = !on;
   el("shot-delete-selected").hidden = !on;
   el("shot-clear-selection").hidden = !on;
-  el("shot-selbar").hidden = !on;
-  document.body.classList.toggle("sel-active", on);
+  updateSelbar();
   updateShotSelection();
+}
+
+// 底部栏：截图网格可见时常驻（手机端），「选择」一键进入/退出多选
+function updateSelbar() {
+  const on = state.shotSelectMode;
+  const gridVisible = state.view === "screenshots" && !el("shot-grid").hidden;
+  el("shot-selbar").hidden = !gridVisible;
+  document.body.classList.toggle("sel-active", gridVisible);
+  const toggle = el("selbar-select");
+  toggle.textContent = on ? "完成" : "选择";
+  toggle.classList.toggle("primary", on);
+  for (const id of ["selbar-count", "selbar-clear", "selbar-delete", "selbar-download"]) {
+    el(id).hidden = !on;
+  }
 }
 
 function clearShotSelection() {
