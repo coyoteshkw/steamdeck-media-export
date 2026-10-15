@@ -252,6 +252,9 @@ def cmd_serve(args) -> int:
         token=args.token,
         default_user=args.user,
         default_out=Path(args.out).expanduser(),
+        cache_dir=Path(args.cache).expanduser() if args.cache else None,
+        cache_ttl=max(0.0, args.cache_ttl) * 60,
+        cache_max=max(1, int(args.cache_max * 1024**3)),
     )
 
 
@@ -352,6 +355,12 @@ def build_parser() -> argparse.ArgumentParser:
                          help="界面默认账号：auto / all / SteamID")
     p_serve.add_argument("-o", "--out", default="~/Videos/SteamExports",
                          help="界面默认输出目录")
+    p_serve.add_argument("--cache", default=None,
+                         help="下载临时缓存目录（默认 ~/.cache/steam-exporter/downloads）")
+    p_serve.add_argument("--cache-ttl", type=float, default=30,
+                         help="下载缓存保留时间（分钟，默认 30）")
+    p_serve.add_argument("--cache-max", type=float, default=5,
+                         help="下载缓存容量上限（GB，默认 5）")
     p_serve.set_defaults(func=cmd_serve)
 
     return parser

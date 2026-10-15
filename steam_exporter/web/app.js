@@ -76,6 +76,7 @@ const state = {
   bytes: 0,
   currentName: "",
   currentTotal: null,
+  pendingDownload: null,
   outDir: "",
 };
 
@@ -112,6 +113,14 @@ function applySummary(s) {
   el("template").value = s.default_template;
   state.outDir = s.default_out;
 
+  const profile = el("download-profile");
+  profile.innerHTML = "";
+  for (const item of s.download_profiles || []) {
+    profile.appendChild(new Option(item.label, item.id));
+  }
+  if (profile.options.length) profile.value = "fast";
+  updateCacheInfo(s.cache);
+
   const badge = el("ffmpeg-badge");
   if (s.ffmpeg) { badge.textContent = "ffmpeg 就绪"; badge.className = "badge ok"; }
   else { badge.textContent = "缺少 ffmpeg"; badge.className = "badge err"; }
@@ -142,6 +151,7 @@ function bindEvents() {
   el("cancel-job").addEventListener("click", cancelJob);
   el("reveal-output").addEventListener("click", revealOutput);
   el("toggle-log").addEventListener("click", () => setLogOpen(el("log").hidden));
+  el("clear-cache").addEventListener("click", clearCache);
 }
 
 function syncModeFields() {
@@ -372,22 +382,71 @@ function renderItemRow(item) {
 }
 
 function downloadItem(item) {
-  const params = new URLSearchParams();
-  params.set("user", el("user-select").value || "auto");
-  params.set("id", item.id);
-  params.set("mode", el("mode").value);
-  params.set("codec", el("codec").value);
-  params.set("crf", el("crf").value);
-  params.set("preset", el("preset").value);
-  params.set("scale", el("scale").value.trim());
-  params.set("trim", el("trim").checked ? "1" : "0");
-  if (TOKEN) params.set("token", TOKEN);
-  toast(`开始下载：${item.game}（${el("mode").value === "compress" ? "压缩" : "无损"}）`);
+  const profile = el("download-profile").value || "fast";
+  const user = el("user-select").value || "auto";
+  if (profile === "lossless") {
+    const params = new URLSearchParams();
+    params.set("user", user);
+    params.set("id", item.id);
+    params.set("mode", "lossless");
+    params.set("trim", el("trim").checked ? "1" : "0");
+    if (TOKEN) params.set("token", TOKEN);
+    toast("开始下载（无损流式）");
+    triggerUrl("/api/download?" + params.toString());
+    return;
+  }
+  prepareDownload({ user, id: item.id, profile }, item);
+}
+
+async function prepareDownload(payload, item) {
+  try {
+    const res = await api("/api/download/prepare", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (res.ready) {
+      toast("开始下载（命中缓存）");
+      triggerFileDownload(res.key);
+      return;
+    }
+    state.pendingDownload = { key: res.key };
+    toast("正在准备压缩，完成后自动开始下载…");
+    startJob(res.job_id, 1, item ? item.size : 0, true);
+  } catch (err) {
+    toast("下载失败：" + err.message);
+  }
+}
+
+function triggerUrl(url) {
   const link = document.createElement("a");
-  link.href = "/api/download?" + params.toString();
+  link.href = url;
   document.body.appendChild(link);
   link.click();
   link.remove();
+}
+
+function triggerFileDownload(key) {
+  triggerUrl(withToken(`/api/download/file?key=${encodeURIComponent(key)}`));
+}
+
+function updateCacheInfo(cache) {
+  const node = el("cache-info");
+  if (!cache) {
+    node.textContent = "缓存：未启用";
+    return;
+  }
+  node.textContent = `缓存：${cache.count} 个 / ${fmtSize(cache.bytes)}`;
+}
+
+async function clearCache() {
+  try {
+    const res = await api("/api/cache/clear", { method: "POST" });
+    el("cache-info").textContent = "缓存：0 个 / 0 B";
+    toast(`已清理 ${res.removed} 个缓存文件`);
+  } catch (err) {
+    toast("清理失败：" + err.message);
+  }
 }
 
 function span(className, text) {
@@ -515,6 +574,7 @@ async function doExport(useSelected) {
       body: JSON.stringify(payload),
     });
     if (payload.dry_run) { showPlan(res); return; }
+    state.pendingDownload = null;
     toast(`已开始导出：${res.planned} 条`);
     startJob(res.job_id, res.planned, res.total_size);
   } catch (err) {
@@ -536,7 +596,7 @@ function showPlan(res) {
   setLogOpen(true);
 }
 
-function startJob(jobId, planned, totalSize) {
+function startJob(jobId, planned, totalSize, isDownload = false) {
   state.jobId = jobId;
   state.planned = planned;
   state.done = 0;
@@ -551,7 +611,7 @@ function startJob(jobId, planned, totalSize) {
   el("cancel-job").disabled = false;
   el("item-bar").style.width = "0%";
   el("overall-bar").style.width = "0%";
-  el("item-text").textContent = "等待开始…";
+  el("item-text").textContent = isDownload ? "正在准备压缩…" : "等待开始…";
   el("overall-text").textContent = `0 / ${planned} · 输入约 ${fmtSize(totalSize)}`;
   setJobStatus("run", "运行中");
 
@@ -649,6 +709,15 @@ function finishJob(status) {
   if (state.es) { state.es.close(); state.es = null; }
   el("cancel-job").disabled = true;
   el("item-bar").style.width = "100%";
+  if (status === "done" && state.pendingDownload) {
+    const key = state.pendingDownload.key;
+    state.pendingDownload = null;
+    setJobStatus("done", "准备完成");
+    triggerFileDownload(key);
+    toast("准备完成，开始下载");
+    return;
+  }
+  state.pendingDownload = null;
   if (status === "cancelled") { setJobStatus("warn", "已取消"); toast("任务已取消"); }
   else if (status === "failed") { setJobStatus("err", "有失败"); toast("部分导出失败，见日志"); }
   else { setJobStatus("done", "完成"); toast("导出完成"); }

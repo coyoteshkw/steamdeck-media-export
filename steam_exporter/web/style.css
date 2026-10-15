@@ -109,6 +109,10 @@ h1 { font-size: 17px; margin: 0; font-weight: 650; }
 .field.inline { flex-direction: row; align-items: center; gap: 8px; }
 .field.inline select { width: auto; min-width: 120px; }
 .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 2px; }
+.hint { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.5; }
+.hint b { color: var(--text); }
+.cache-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cache-row #cache-info { font-size: 12px; }
 .checkbox { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text); cursor: pointer; }
 .checkbox.inline { display: inline-flex; }
 input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent-2); }

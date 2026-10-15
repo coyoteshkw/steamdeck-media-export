@@ -18,6 +18,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
 from . import __version__
+from .download_cache import DownloadCache
 from .exporter import (
     DEFAULT_TEMPLATE,
     MODE_COMPRESS,
@@ -39,7 +40,13 @@ from .library import (
     sort_sources,
 )
 from .steam import find_steam_roots, find_userdata_dirs, primary_user
-from .util import find_tool, sanitize_value
+from .util import (
+    ExportCancelled,
+    FFmpegError,
+    find_tool,
+    run_ffmpeg,
+    sanitize_value,
+)
 
 WEB_DIR = Path(__file__).parent / "web"
 
@@ -152,10 +159,26 @@ END_STATUSES = {"done", "failed", "cancelled"}
 # 任务
 # ---------------------------------------------------------------------------
 class Job:
-    def __init__(self, sources, options: ExportOptions) -> None:
+    def __init__(
+        self,
+        sources,
+        options: ExportOptions,
+        *,
+        kind: str = "export",
+        source=None,
+        cache_key: str | None = None,
+        filename: str | None = None,
+        cache: DownloadCache | None = None,
+    ) -> None:
         self.id = uuid.uuid4().hex[:12]
+        self.kind = kind
         self.sources = sources
         self.options = options
+        self.source = source
+        self.cache_key = cache_key
+        self.filename = filename
+        self.cache = cache
+        self.result: dict | None = None
         self.cancel_event = threading.Event()
         self.status = "queued"
         self.created = time.time()
@@ -182,11 +205,13 @@ class Job:
     def snapshot(self) -> dict:
         return {
             "id": self.id,
+            "kind": self.kind,
             "status": self.status,
             "created": self.created,
             "planned": len(self.sources),
             "total_size": sum(s.size_bytes for s in self.sources),
             "stats": self.stats,
+            "result": self.result,
         }
 
 
@@ -208,11 +233,18 @@ class Jobs:
 # 应用状态
 # ---------------------------------------------------------------------------
 class AppState:
-    def __init__(self, default_user: str, default_out: Path, token: str | None) -> None:
+    def __init__(
+        self,
+        default_user: str,
+        default_out: Path,
+        token: str | None,
+        download_cache: DownloadCache | None = None,
+    ) -> None:
         self.resolver = build_resolver()
         self.default_user = default_user
         self.default_out = default_out
         self.token = token
+        self.download_cache = download_cache
         self.jobs = Jobs()
         self._cache: dict[str, tuple[float, list]] = {}
         self._cache_lock = threading.Lock()
@@ -309,6 +341,10 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path == "/api/export":
                 self._handle_export(payload)
+            elif path == "/api/download/prepare":
+                self._handle_download_prepare(payload)
+            elif path == "/api/cache/clear":
+                self._handle_cache_clear(payload)
             elif path.startswith("/api/jobs/") and path.endswith("/cancel"):
                 self._handle_cancel(path, payload)
             elif path == "/api/reveal":
@@ -327,6 +363,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._handle_recordings(query)
         if path == "/api/download":
             return self._handle_download(query)
+        if path == "/api/download/file":
+            return self._handle_download_file(query)
         if path.startswith("/api/icon/"):
             return self._handle_icon(path[len("/api/icon/"):])
         if path == "/api/jobs":
@@ -373,6 +411,10 @@ class Handler(BaseHTTPRequestHandler):
                 "modes": [MODE_LOSSLESS, MODE_COMPRESS],
                 "type_choices": TYPE_CHOICES,
                 "default_template": DEFAULT_TEMPLATE,
+                "download_profiles": _download_profiles(),
+                "cache": self.state.download_cache.stats()
+                if self.state.download_cache
+                else None,
             }
         )
 
@@ -464,6 +506,146 @@ class Handler(BaseHTTPRequestHandler):
             if process.stderr is not None:
                 process.stderr.close()
             shutil.rmtree(link_root, ignore_errors=True)
+
+    def _download_options(self, payload: dict) -> ExportOptions:
+        profile = payload.get("profile", "fast")
+        options = self._build_options(payload)
+        options.trim = True
+        options.use_manifest = False
+        options.force = False
+        if profile == "lossless":
+            options.mode = MODE_LOSSLESS
+            options.vaapi_device = None
+        else:
+            options.mode = MODE_COMPRESS
+            if profile == "balanced":
+                options.codec, options.preset, options.crf, options.scale = (
+                    "libx264",
+                    "medium",
+                    23,
+                    None,
+                )
+            elif profile == "small":
+                options.codec, options.preset, options.crf, options.scale = (
+                    "libx264",
+                    "veryfast",
+                    26,
+                    "1280:-2",
+                )
+            elif profile == "hardware":
+                device = find_vaapi_device()
+                if device:
+                    options.codec, options.crf, options.vaapi_device = (
+                        "h264_vaapi",
+                        23,
+                        device,
+                    )
+                else:
+                    options.codec, options.preset, options.crf = "libx264", "veryfast", 23
+            else:  # fast
+                options.codec, options.preset, options.crf, options.scale = (
+                    "libx264",
+                    "veryfast",
+                    23,
+                    None,
+                )
+        return options
+
+    def _handle_download_prepare(self, payload: dict) -> None:
+        """准备压缩下载：命中缓存直接返回，否则起一个编码到缓存的 job。"""
+        cache = self.state.download_cache
+        if cache is None:
+            return self._error(500, "下载缓存未启用")
+        user = payload.get("user") or "auto"
+        source_id = payload.get("id")
+        source = next(
+            (s for s in self.state.sources(user) if s.source_id == source_id), None
+        )
+        if source is None:
+            return self._error(404, "找不到该录制")
+        options = self._download_options(payload)
+        if options.mode == MODE_LOSSLESS:
+            # 无损不走缓存，直接流式
+            return self._send_json({"stream": True})
+        cache.cleanup()
+        key = cache.key(source, options)
+        filename = download_filename(source)
+        if cache.has(key):
+            cache.touch(key)
+            return self._send_json({"ready": True, "key": key, "filename": filename})
+        job = Job(
+            [source],
+            options,
+            kind="download",
+            source=source,
+            cache_key=key,
+            filename=filename,
+            cache=cache,
+        )
+        self.state.jobs.add(job)
+        threading.Thread(target=_run_job, args=(job,), daemon=True).start()
+        return self._send_json(
+            {
+                "ready": False,
+                "job_id": job.id,
+                "key": key,
+                "filename": filename,
+                "planned": 1,
+                "total_size": source.size_bytes,
+            }
+        )
+
+    def _handle_download_file(self, query: dict) -> None:
+        cache = self.state.download_cache
+        if cache is None:
+            return self._error(500, "下载缓存未启用")
+        key = query.get("key", [""])[0]
+        if not key or not cache.has(key):
+            return self._error(404, "缓存已过期，请重新点击下载")
+        cache.touch(key)
+        path = cache.path_for(key)
+        filename = cache.get_name(key) or path.name
+        self._serve_file(path, filename)
+
+    def _serve_file(self, path: Path, filename: str) -> None:
+        """以普通文件方式发送（带 Content-Length 与 Range，可续传）。"""
+        try:
+            size = path.stat().st_size
+        except OSError:
+            return self._error(404, "文件不存在")
+        byte_range = _parse_range(self.headers.get("Range"), size)
+        partial = byte_range is not None
+        start, end = byte_range if partial else (0, size - 1)
+        length = end - start + 1
+        self.send_response(206 if partial else 200)
+        self.send_header("Content-Type", "video/mp4")
+        self.send_header("Content-Disposition", _content_disposition(filename))
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(length))
+        if partial:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self._responded = True
+        try:
+            with open(path, "rb") as handle:
+                handle.seek(start)
+                remaining = length
+                while remaining > 0:
+                    chunk = handle.read(min(262144, remaining))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    remaining -= len(chunk)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
+    def _handle_cache_clear(self, payload: dict) -> None:
+        cache = self.state.download_cache
+        if cache is None:
+            return self._error(500, "下载缓存未启用")
+        removed = cache.clear()
+        self._send_json({"ok": True, "removed": removed})
 
     def _handle_icon(self, appid: str) -> None:
         art = find_game_art(appid.strip())
@@ -643,13 +825,74 @@ def download_filename(source) -> str:
     return f"{game} - {stamp} - {source.kind_cn}.mp4"
 
 
+def default_cache_dir() -> Path:
+    import os
+
+    base = os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
+    return Path(base) / "steam-exporter" / "downloads"
+
+
+def _download_profiles() -> list[dict]:
+    """下载到本机的预设画质。"""
+    profiles = [
+        {"id": "lossless", "label": "原画无损（最快、体积大）"},
+        {"id": "fast", "label": "快速压缩（veryfast）"},
+        {"id": "balanced", "label": "均衡压缩（medium）"},
+        {"id": "small", "label": "小体积（720p / CRF26）"},
+    ]
+    if find_vaapi_device():
+        profiles.append({"id": "hardware", "label": "硬件压缩（VAAPI、低 CPU）"})
+    return profiles
+
+
+def _parse_range(header: str | None, size: int) -> tuple[int, int] | None:
+    """解析 HTTP Range 头（只取第一个区间），返回 (start, end)。"""
+    if not header or not header.startswith("bytes=") or size <= 0:
+        return None
+    spec = header[len("bytes=") :].split(",")[0].strip()
+    if "-" not in spec:
+        return None
+    start_s, end_s = spec.split("-", 1)
+    try:
+        if start_s == "":
+            suffix = int(end_s)
+            if suffix <= 0:
+                return None
+            start, end = max(0, size - suffix), size - 1
+        else:
+            start = int(start_s)
+            end = int(end_s) if end_s else size - 1
+    except ValueError:
+        return None
+    if start < 0 or start >= size:
+        return None
+    end = min(end, size - 1)
+    if end < start:
+        return None
+    return start, end
+
+
 def _content_disposition(filename: str) -> str:
     fallback = filename.encode("ascii", "ignore").decode().strip() or "video.mp4"
     return f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quote(filename)}"
 
 
+def _safe_unlink(path: Path) -> None:
+    try:
+        path.unlink()
+    except OSError:
+        pass
+
+
 def _run_job(job: Job) -> None:
     job.status = "running"
+    if job.kind == "download":
+        _run_download_job(job)
+    else:
+        _run_export_job(job)
+
+
+def _run_export_job(job: Job) -> None:
     exporter = Exporter(job.options, on_event=job.emit, cancel_event=job.cancel_event)
     try:
         stats = exporter.export(job.sources)
@@ -669,6 +912,97 @@ def _run_job(job: Job) -> None:
             job.status = "done"
     except Exception as exc:  # noqa: BLE001
         job.emit({"type": "error", "message": str(exc)})
+        job.status = "failed"
+    finally:
+        job.emit({"type": "end", "status": job.status})
+
+
+def _run_download_job(job: Job) -> None:
+    """把单条录制编码到临时缓存（不写导出目录、不记清单）。"""
+    source = job.source
+    cache = job.cache
+    key = job.cache_key
+    target = cache.path_for(key)
+    temp = cache.temp_for(key)
+    job.emit({"type": "start", "planned": 1, "skipped": 0})
+    job.emit(
+        {
+            "type": "item_start",
+            "index": 1,
+            "total": 1,
+            "source": source.to_dict(),
+            "output": str(target),
+            "prepare": True,
+        }
+    )
+
+    def progress(fraction, seconds, speed):
+        job.emit(
+            {
+                "type": "progress",
+                "index": 1,
+                "total": 1,
+                "fraction": None if fraction is None else max(0.0, min(1.0, fraction)),
+                "seconds": seconds,
+                "speed": speed,
+            }
+        )
+
+    try:
+        _safe_unlink(target)
+        _safe_unlink(temp)
+        args = build_ffmpeg_args(source, job.options, temp)
+        run_ffmpeg(
+            args,
+            total_duration=source.duration_s,
+            on_progress=progress,
+            cancel_event=job.cancel_event,
+        )
+        temp.replace(target)
+        cache.store_name(key, job.filename or target.name)
+        cache.touch(key)
+        size = target.stat().st_size
+        job.result = {"key": key, "filename": job.filename, "size": size}
+        job.stats = {
+            "exported": 1,
+            "skipped": 0,
+            "failed": 0,
+            "cancelled": False,
+            "bytes": size,
+            "outputs": [str(target)],
+        }
+        job.emit(
+            {
+                "type": "item_done",
+                "index": 1,
+                "total": 1,
+                "source": source.to_dict(),
+                "output": str(target),
+                "size": size,
+                "prepare": True,
+            }
+        )
+        job.emit(
+            {
+                "type": "finished",
+                "exported": 1,
+                "skipped": 0,
+                "failed": 0,
+                "cancelled": False,
+                "bytes": size,
+                "outputs": [str(target)],
+            }
+        )
+        job.status = "done"
+    except ExportCancelled:
+        _safe_unlink(temp)
+        job.emit({"type": "cancelled", "index": 1})
+        job.status = "cancelled"
+    except (FFmpegError, OSError) as exc:
+        _safe_unlink(temp)
+        job.emit(
+            {"type": "item_failed", "index": 1, "source": source.to_dict(), "error": str(exc)}
+        )
         job.status = "failed"
     finally:
         job.emit({"type": "end", "status": job.status})
@@ -721,11 +1055,17 @@ def serve(
     token: str | None = None,
     default_user: str = "auto",
     default_out: Path = Path("~/Videos/SteamExports"),
+    cache_dir: Path | None = None,
+    cache_ttl: float = 1800.0,
+    cache_max: int = 5 * 1024**3,
 ) -> int:
     from .util import raise_nofile_limit
 
     raise_nofile_limit()
-    Handler.state = AppState(default_user, default_out, token)
+    cache_root = cache_dir or default_cache_dir()
+    download_cache = DownloadCache(cache_root, ttl=cache_ttl, max_bytes=cache_max)
+    download_cache.cleanup()
+    Handler.state = AppState(default_user, default_out, token, download_cache)
 
     try:
         httpd = ThreadingHTTPServer((host, port), Handler)
@@ -747,6 +1087,7 @@ def serve(
     else:
         print(f"  地址：http://{host}:{port}/{query}")
     print(f"  输出：{default_out}")
+    print(f"  下载缓存：{cache_root}（TTL {int(cache_ttl/60)} 分钟，上限 {cache_max//1024**3}GB）")
     if host not in ("127.0.0.1", "localhost"):
         if token:
             print("  已启用访问令牌，访问时需带 ?token=…")
