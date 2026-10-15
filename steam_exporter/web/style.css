@@ -42,6 +42,7 @@ h1 { font-size: 17px; margin: 0; font-weight: 650; }
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  flex-wrap: wrap;
   padding: 12px 20px;
   background: rgba(20, 24, 32, 0.85);
   backdrop-filter: blur(10px);
@@ -237,7 +238,7 @@ img.game-thumb { display: block; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.group-meta { color: var(--muted); font-size: 12px; }
+.group-meta { color: var(--muted); font-size: 12px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .group-summary { display: flex; gap: 6px; flex: none; }
 .chip { font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
 .chip.ok { color: var(--ok); border-color: #2c5a41; }
@@ -247,7 +248,7 @@ img.game-thumb { display: block; }
 .group-items { background: #10131a; }
 .item-row {
   display: grid;
-  grid-template-columns: 22px 62px 158px 62px 82px minmax(120px, 1fr) 92px;
+  grid-template-columns: 22px 62px 150px 62px 80px minmax(0, 1fr) 92px;
   gap: 10px;
   align-items: center;
   padding: 6px 12px 6px 42px;
@@ -284,6 +285,7 @@ body.job-active .layout { padding-bottom: 96px; }
   backdrop-filter: blur(10px);
   border-top: 1px solid var(--border);
   box-shadow: 0 -10px 28px rgba(0, 0, 0, .4);
+  padding-bottom: env(safe-area-inset-bottom);
 }
 .jobbar-main {
   display: flex;
@@ -359,10 +361,42 @@ body.job-active .layout { padding-bottom: 96px; }
   .sidebar { width: auto; overflow: visible; }
   .main { min-height: 60vh; }
   .groups { max-height: none; }
-  .item-row { grid-template-columns: 22px 56px minmax(80px, 1fr) 60px 74px; padding-left: 16px; gap: 8px; }
+  .item-row { grid-template-columns: 22px 54px minmax(110px, 1fr) 56px 70px 78px; padding-left: 18px; gap: 8px; }
   .item-id { display: none; }
   .checks { grid-template-columns: 1fr 1fr; }
   body.job-active .layout { padding-bottom: 150px; }
   .jobbar-main { flex-wrap: wrap; gap: 10px; }
   .jobbar-actions { width: 100%; justify-content: flex-end; }
+}
+
+/* 手机：进一步压缩 */
+@media (max-width: 560px) {
+  .appbar { padding: 10px 12px; gap: 8px; }
+  .brand .logo { font-size: 20px; }
+  h1 { font-size: 15px; }
+  .appbar-right { width: 100%; justify-content: space-between; }
+  .appbar-right .field.inline { flex: 1; }
+  .appbar-right .field.inline select { width: 100%; }
+  .layout { padding: 8px; gap: 10px; }
+  .card { padding: 12px; }
+  .toolbar { gap: 8px; padding: 8px 10px; }
+  .toolbar .btn { flex: 1; }
+  .field.inline.compact { flex: 1; }
+  .game-thumb { width: 48px; height: 29px; }
+  .group-head { gap: 8px; padding: 8px 10px; }
+  .group-meta { font-size: 11px; }
+  .item-row {
+    grid-template-columns: 20px 46px minmax(64px, 1fr) 54px 54px;
+    padding: 7px 10px 7px 10px;
+    gap: 6px;
+    font-size: 12px;
+  }
+  .item-id, .item-dur { display: none; }
+  .item-time { overflow: hidden; text-overflow: ellipsis; }
+  .item-status { font-size: 11px; }
+  .jobbar-main { padding: 8px 10px; gap: 8px; }
+  .jobbar-main .btn.small { flex: 1; }
+  .jobbar-actions { gap: 6px; }
+  .log { max-height: 120px; }
+  body.job-active .layout { padding-bottom: 172px; }
 }

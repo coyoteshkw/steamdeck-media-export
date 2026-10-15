@@ -616,6 +616,27 @@ def _parse_date(text) -> date | None:
 # ---------------------------------------------------------------------------
 # 启动
 # ---------------------------------------------------------------------------
+def _local_ips() -> list[str]:
+    """探测本机局域网 IPv4 地址（用于打印可访问 URL）。"""
+    import socket
+
+    ips: set[str] = set()
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.settimeout(0.3)
+        sock.connect(("8.8.8.8", 80))
+        ips.add(sock.getsockname()[0])
+        sock.close()
+    except OSError:
+        pass
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ips.add(info[4][0])
+    except OSError:
+        pass
+    return sorted(ip for ip in ips if not ip.startswith("127."))
+
+
 def serve(
     *,
     host: str = "127.0.0.1",
@@ -638,12 +659,23 @@ def serve(
         return 1
 
     query = f"?token={token}" if token else ""
-    url = f"http://{host}:{port}/{query}"
     print("Steam 录制导出 · 网页管理界面")
-    print(f"  地址：{url}")
+    if host in ("0.0.0.0", "::", ""):
+        ips = _local_ips()
+        if ips:
+            print("  局域网地址（手机 / 平板 / 另一台电脑都可访问）：")
+            for ip in ips:
+                print(f"    http://{ip}:{port}/{query}")
+        else:
+            print(f"  正在监听 {host}:{port}（未探测到局域网 IP）")
+    else:
+        print(f"  地址：http://{host}:{port}/{query}")
     print(f"  输出：{default_out}")
     if host not in ("127.0.0.1", "localhost"):
-        print("  注意：已监听非本机地址，建议同时设置 --token 以防他人访问")
+        if token:
+            print("  已启用访问令牌，访问时需带 ?token=…")
+        else:
+            print("  ⚠ 监听了非本机地址但未设 --token，局域网内任何人都能操作，强烈建议加 --token")
     print("  按 Ctrl+C 停止")
     print()
 

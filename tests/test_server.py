@@ -55,6 +55,12 @@ class TestFindGameArt(unittest.TestCase):
         self.assertIsNone(server.find_game_art("abc"))
         self.assertIsNone(server.find_game_art(""))
 
+    def test_local_ips(self):
+        ips = server._local_ips()
+        self.assertIsInstance(ips, list)
+        for ip in ips:
+            self.assertFalse(ip.startswith("127."))
+
 
 if __name__ == "__main__":
     unittest.main()
