@@ -184,6 +184,14 @@
 
 <div class="drawer-scrim" id="drawer-scrim" hidden></div>
 
+<div class="selbar" id="shot-selbar" hidden>
+  <span class="selbar-count" id="selbar-count">已选 0</span>
+  <span class="spacer"></span>
+  <button class="btn small" id="selbar-clear">取消选中</button>
+  <button class="btn small primary" id="selbar-download">下载</button>
+  <button class="btn small danger" id="selbar-delete">删除</button>
+</div>
+
 <div class="modal" id="confirm-modal" hidden>
   <div class="modal-box">
     <h3 id="confirm-title">确认删除</h3>
@@ -269,9 +277,9 @@
       </div>
       <button class="btn small" id="shot-download-page" hidden>打包下载</button>
       <button class="btn small" id="shot-select-toggle" hidden>选择</button>
-      <button class="btn small" id="shot-download-selected" hidden disabled>下载选中</button>
-      <button class="btn danger small" id="shot-delete-selected" hidden disabled>删除选中</button>
-      <button class="btn small" id="shot-clear-selection" hidden disabled>取消选中</button>
+      <button class="btn small sel-toolbar" id="shot-download-selected" hidden disabled>下载选中</button>
+      <button class="btn danger small sel-toolbar" id="shot-delete-selected" hidden disabled>删除选中</button>
+      <button class="btn small sel-toolbar" id="shot-clear-selection" hidden disabled>取消选中</button>
     </div>
     <div class="shot-games" id="shot-games"></div>
     <div class="shot-grid" id="shot-grid" hidden></div>
@@ -281,7 +289,13 @@
 
 <div class="modal viewer" id="viewer-modal" hidden>
   <button class="viewer-nav prev" id="viewer-prev" title="上一张">‹</button>
-  <img id="viewer-img" alt="">
+  <div class="viewer-stage" id="viewer-stage">
+    <img id="viewer-img" alt="">
+    <div class="viewer-loading" id="viewer-loading">
+      <span class="spinner"></span>
+      <span id="viewer-loading-text">加载原图中…</span>
+    </div>
+  </div>
   <button class="viewer-nav next" id="viewer-next" title="下一张">›</button>
   <div class="viewer-bar">
     <span id="viewer-title"></span>

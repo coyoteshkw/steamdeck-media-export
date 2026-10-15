@@ -216,6 +216,10 @@ function bindEvents() {
   el("shot-clear-selection").addEventListener("click", clearShotSelection);
   el("shot-delete-selected").addEventListener("click", () =>
     openDeleteConfirm(selectedShotItems().map((s) => s.id), "screenshot"));
+  el("selbar-download").addEventListener("click", () => downloadShots(selectedShotItems()));
+  el("selbar-clear").addEventListener("click", clearShotSelection);
+  el("selbar-delete").addEventListener("click", () =>
+    openDeleteConfirm(selectedShotItems().map((s) => s.id), "screenshot"));
 
   // 大图查看器
   el("viewer-close").addEventListener("click", closeViewer);
@@ -1096,6 +1100,9 @@ function switchView(view) {
   }
   el("view-recordings").hidden = view !== "recordings";
   el("view-screenshots").hidden = view !== "screenshots";
+  const selActive = view === "screenshots" && state.shotSelectMode;
+  el("shot-selbar").hidden = !selActive;
+  document.body.classList.toggle("sel-active", selActive);
   if (view === "screenshots" && !state.shotLoaded) {
     state.shotLoaded = true;
     loadScreenshots();
@@ -1375,6 +1382,8 @@ function setShotSelectMode(on) {
   el("shot-download-selected").hidden = !on;
   el("shot-delete-selected").hidden = !on;
   el("shot-clear-selection").hidden = !on;
+  el("shot-selbar").hidden = !on;
+  document.body.classList.toggle("sel-active", on);
   updateShotSelection();
 }
 
@@ -1404,6 +1413,10 @@ function updateShotSelection() {
   el("shot-clear-selection").disabled = n === 0;
   el("shot-download-selected").textContent = n ? `下载选中（${n}）` : "下载选中";
   el("shot-delete-selected").textContent = n ? `删除选中（${n}）` : "删除选中";
+  el("selbar-download").disabled = n === 0;
+  el("selbar-delete").disabled = n === 0;
+  el("selbar-clear").disabled = n === 0;
+  el("selbar-count").textContent = `已选 ${n}`;
 }
 
 function downloadShot(item) {
@@ -1464,12 +1477,38 @@ function updateViewer() {
   const item = state.shotItems[state.viewerIndex];
   if (!item) return;
   const user = el("user-select").value || "auto";
-  el("viewer-img").src = withToken(
-    `/api/screenshot/full/${encodeURIComponent(item.id)}?user=${encodeURIComponent(user)}`);
+  const query = `user=${encodeURIComponent(user)}`;
+  // 先用已缓存的缩略图占位（秒出），再加载原图
+  el("viewer-stage").style.backgroundImage = `url("${withToken(
+    `/api/screenshot/thumb/${encodeURIComponent(item.id)}?${query}`)}")`;
+  const img = el("viewer-img");
+  const loading = el("viewer-loading");
+  loading.hidden = false;
+  el("viewer-loading-text").textContent = "加载原图中…";
+  img.onload = () => {
+    loading.hidden = true;
+    preloadNeighbors();
+  };
+  img.onerror = () => {
+    loading.hidden = false;
+    el("viewer-loading-text").textContent = "原图加载失败";
+  };
+  img.src = withToken(`/api/screenshot/full/${encodeURIComponent(item.id)}?${query}`);
   el("viewer-title").textContent =
     `${item.game} · ${item.recorded_display}` + (item.caption ? ` · ${item.caption}` : "");
   el("viewer-prev").hidden = state.viewerIndex <= 0;
   el("viewer-next").hidden = state.viewerIndex >= state.shotItems.length - 1;
+}
+
+function preloadNeighbors() {
+  const user = el("user-select").value || "auto";
+  for (const delta of [-1, 1]) {
+    const item = state.shotItems[state.viewerIndex + delta];
+    if (!item) continue;
+    const pre = new Image();
+    pre.src = withToken(
+      `/api/screenshot/full/${encodeURIComponent(item.id)}?user=${encodeURIComponent(user)}`);
+  }
 }
 
 function viewerStep(delta) {
@@ -1480,7 +1519,11 @@ function viewerStep(delta) {
 }
 
 function closeViewer() {
-  el("viewer-img").removeAttribute("src");
+  const img = el("viewer-img");
+  img.onload = null;
+  img.onerror = null;
+  img.removeAttribute("src");
+  el("viewer-stage").style.backgroundImage = "";
   el("viewer-modal").hidden = true;
   state.viewerIndex = -1;
 }

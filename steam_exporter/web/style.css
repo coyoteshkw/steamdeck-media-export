@@ -566,7 +566,38 @@ img.game-thumb { display: block; }
 
 /* 大图查看器 */
 .modal.viewer { background: rgba(0, 0, 0, .94); padding: 0; }
-#viewer-img { max-width: 100%; max-height: calc(100% - 64px); object-fit: contain; display: block; margin: auto; }
+.viewer-stage {
+  position: absolute;
+  inset: 0 0 64px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+#viewer-img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+.viewer-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--text-2);
+  font-size: 13px;
+  pointer-events: none;
+}
+.spinner {
+  width: 26px;
+  height: 26px;
+  border: 3px solid rgba(255, 255, 255, .18);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 .viewer-bar {
   position: absolute;
   left: 0;
@@ -582,7 +613,7 @@ img.game-thumb { display: block; }
 #viewer-title { font-size: 13px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .viewer-nav {
   position: absolute;
-  top: 50%;
+  top: calc(50% - 32px);
   transform: translateY(-50%);
   width: 48px;
   height: 48px;
@@ -668,6 +699,24 @@ body.job-active .layout { padding-bottom: 100px; }
   backdrop-filter: blur(2px);
 }
 
+/* 底部选择栏（仅手机显示） */
+.selbar {
+  display: none;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 45;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px calc(9px + env(safe-area-inset-bottom));
+  background: rgba(15, 18, 25, .97);
+  backdrop-filter: blur(14px);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, .4);
+}
+.selbar-count { font-size: 12px; color: var(--text-2); }
+
 /* --------------------------------------------------------------------------
    滚动条
    -------------------------------------------------------------------------- */
@@ -716,6 +765,11 @@ body.job-active .layout { padding-bottom: 100px; }
   .main { min-height: 55vh; }
   .groups { max-height: none; }
   .group-items { overflow: visible; }
+
+  /* 选择操作移到固定底部栏 */
+  .sel-toolbar { display: none !important; }
+  .selbar { display: flex; }
+  body.sel-active .layout { padding-bottom: 76px; }
 
   /* 录制行 → 两行卡片 */
   .item-row {
