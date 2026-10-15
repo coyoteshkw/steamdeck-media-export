@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "steam-exporter"
-version = "0.2.14"
+version = "0.2.15"
 description = "从 SteamOS / Steam 游戏录制中导出剪辑与录像（无损或压缩）"
 readme = "README.md"
 requires-python = ">=3.10"

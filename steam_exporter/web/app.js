@@ -402,10 +402,8 @@ function renderItemRow(item) {
     play.className = "icon-btn";
     play.title = "在线播放（最多前 5 分钟）";
     play.innerHTML =
-      '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" ' +
-      'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
-      '<circle cx="12" cy="12" r="9"/>' +
-      '<path d="M10 8.2l6.2 3.8-6.2 3.8z" fill="currentColor" stroke="none"/></svg>';
+      '<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" stroke="none">' +
+      '<path d="M6.5 5v14l11-7z"/></svg>';
     play.addEventListener("click", (event) => {
       event.stopPropagation();
       openPlay(item);
