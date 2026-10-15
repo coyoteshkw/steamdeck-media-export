@@ -31,11 +31,30 @@ Decky 面板 (React)  ──call()──▶  decky/main.py (Decky 自带 Python)
 | 文件 | 说明 |
 |---|---|
 | `plugin.json` | Decky 插件元数据（`name` 必须与插件目录同名） |
+| `package.json` | **必须安装**，其中 `"type": "module"` 是 Decky 判定「按 ESM 加载」的依据 |
 | `main.py` | 后端：开关 / 状态 / 端口；spawn 主程序服务 |
 | `src/index.tsx` | 面板 UI（开关、地址、二维码、端口、信息） |
 | `dist/index.js` | 构建产物（已提交，安装时无需再 build） |
 | `install.sh` | 安装到 `~/homebrew/plugins/SteamMediaExport` |
 | `reload.sh` | 安全重载 Decky（避免 1337 端口崩溃循环） |
+
+### ⚠️ 两个必须知道的事
+
+1. **`package.json` 必须一起安装。** Decky 的 `plugin.py` 靠它决定加载方式：
+
+   ```python
+   self.load_type = LEGACY_EVAL_IIFE              # 默认：用 eval() 当普通脚本跑
+   if (plugin_dir / "package.json").is_file():
+       if package_json.get("type") == "module":
+           self.load_type = ESMODULE_V1           # 用 import() 按 ESM 跑
+   ```
+
+   少了它，我们 ESM 产物末尾的 `export { ... }` 会被 `eval` 成语法错误
+   （`SyntaxError: Unexpected token 'export'`），面板直接加载不出来。
+
+2. **别直接 `systemctl restart plugin_loader`。** unit 是 `KillMode=process`，
+   旧插件后端会变成孤儿、继续占 `127.0.0.1:1337`，新 loader 绑不上就被 systemd
+   反复重启（所有插件都挂）。用 `./reload.sh`。
 
 ## 构建
 
@@ -48,14 +67,11 @@ npm run build          # 产出 dist/index.js
 ## 安装 / 重载
 
 ```bash
-./install.sh           # 首次会用 sudo 建目录并 chown 给 deck
+./install.sh           # 复制 plugin.json / package.json / main.py / dist 到插件目录（需 sudo）
 ./reload.sh            # 安全重启 Decky
 ```
 
-> ⚠️ 不要直接 `systemctl restart plugin_loader`：Decky 的 unit 是 `KillMode=process`，
-> 旧插件后端会成为孤儿进程继续占着 `127.0.0.1:1337`，导致新 loader 起不来而被 systemd
-> 反复重启。`reload.sh` 会先停服务、清掉孤儿进程再启动。
-> 优先用 Decky 设置里的「重载插件」按钮也可以。
+也可以优先用 Decky 设置里的「重载插件」按钮。
 
 ## 可调设置
 
