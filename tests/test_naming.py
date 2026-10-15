@@ -12,6 +12,7 @@ from steam_exporter.exporter import (
     _find_donor_init,
     _init_video_size,
     _merge_stream_files,
+    build_ffmpeg_args,
     build_stream_input,
     render_relative_path,
     resolve_output_path,
@@ -222,6 +223,51 @@ class TestCorruptionRecovery(unittest.TestCase):
                 height=800,
             )
             self.assertIsNone(_find_donor_init(source, 0))
+
+
+class TestTrim(unittest.TestCase):
+    def _source(self, part: Path, duration: float | None) -> Source:
+        return Source(
+            kind=KIND_CLIP,
+            source_id="clip_x",
+            game_id="1",
+            app_id="1",
+            game="g",
+            recorded_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            parts=[part],
+            duration_s=duration,
+        )
+
+    def test_trim_adds_t(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            part = Path(tmp) / "part"
+            part.mkdir()
+            (part / "init-stream0.m4s").write_bytes(b"init")
+            (part / "chunk-stream0-00001.m4s").write_bytes(b"x")
+            opts = ExportOptions(out_dir=Path(tmp) / "out")
+            args = build_ffmpeg_args(self._source(part, 45.0), opts, Path(tmp) / "o.mp4")
+            self.assertIn("-t", args)
+            self.assertEqual(args[args.index("-t") + 1], "45.000")
+
+    def test_no_trim_flag(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            part = Path(tmp) / "part"
+            part.mkdir()
+            (part / "init-stream0.m4s").write_bytes(b"init")
+            (part / "chunk-stream0-00001.m4s").write_bytes(b"x")
+            opts = ExportOptions(out_dir=Path(tmp) / "out", trim=False)
+            args = build_ffmpeg_args(self._source(part, 45.0), opts, Path(tmp) / "o.mp4")
+            self.assertNotIn("-t", args)
+
+    def test_no_duration_no_trim(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            part = Path(tmp) / "part"
+            part.mkdir()
+            (part / "init-stream0.m4s").write_bytes(b"init")
+            (part / "chunk-stream0-00001.m4s").write_bytes(b"x")
+            opts = ExportOptions(out_dir=Path(tmp) / "out")
+            args = build_ffmpeg_args(self._source(part, None), opts, Path(tmp) / "o.mp4")
+            self.assertNotIn("-t", args)
 
 
 if __name__ == "__main__":

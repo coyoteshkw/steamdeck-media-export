@@ -441,6 +441,7 @@ function collectOptions() {
     scale: el("scale").value.trim(),
     jobs: Number(el("jobs").value) || 1,
     faststart: el("faststart").checked,
+    trim: el("trim").checked,
     force: el("force").checked,
     dry_run: el("dry-run").checked,
     out: el("out-dir").value.trim(),

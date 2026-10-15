@@ -63,6 +63,7 @@ class ExportOptions:
     use_manifest: bool = True
     vaapi_device: str | None = None
     tmp_dir: Path | None = None
+    trim: bool = True
 
 
 @dataclass
@@ -409,6 +410,12 @@ def build_ffmpeg_args(
     args += ["-map", "0:v:0"]
     if audio_in:
         args += ["-map", "1:a:0"]
+
+    # Steam 剪辑按整段（默认 3 秒）保存，尾部常多出不满一段的余量。
+    # 元数据（session.mpd / clip.pb）里的时长才是 Steam 实际播放长度，
+    # 据此裁掉尾部，避免“导出比实际多几秒”。
+    if options.trim and source.duration_s and source.duration_s > 0:
+        args += ["-t", f"{source.duration_s:.3f}"]
 
     if options.mode == MODE_LOSSLESS:
         args += ["-c", "copy"]

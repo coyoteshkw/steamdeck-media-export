@@ -215,6 +215,7 @@ def cmd_export(args) -> int:
         use_manifest=not args.no_manifest,
         vaapi_device=args.vaapi_device,
         tmp_dir=Path(args.tmp).expanduser() if args.tmp else None,
+        trim=not args.no_trim,
     )
 
     print(
@@ -331,6 +332,8 @@ def build_parser() -> argparse.ArgumentParser:
                        help="按录制时间升序只导出前 N 条（便于分批）")
     p_exp.add_argument("--tmp", default=None,
                        help="存放临时符号链接/合并文件的目录（默认输出目录）")
+    p_exp.add_argument("--no-trim", action="store_true",
+                       help="不按元数据时长裁剪尾部（默认会裁掉多余的不完整分段）")
     p_exp.add_argument("--no-manifest", action="store_true", help="不写导出清单")
     p_exp.set_defaults(func=cmd_export)
 

@@ -380,6 +380,7 @@ class Handler(BaseHTTPRequestHandler):
             jobs=max(1, int(payload.get("jobs", 1))),
             use_manifest=bool(payload.get("use_manifest", True)),
             vaapi_device=vaapi_device,
+            trim=bool(payload.get("trim", True)),
         )
 
     def _handle_export(self, payload: dict) -> None:
