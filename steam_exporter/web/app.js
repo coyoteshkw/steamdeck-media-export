@@ -125,8 +125,8 @@ function applySummary(s) {
   const userSelect = el("user-select");
   userSelect.innerHTML = "";
   for (const user of s.users) {
-    userSelect.appendChild(new Option(
-      user.id + (user.primary ? "（主账号）" : "") + ` · ${user.clips} 剪辑`, user.id));
+    const label = (user.primary ? "★ " : "") + user.id + ` · ${user.clips}`;
+    userSelect.appendChild(new Option(label, user.id));
   }
   if (s.users.some((u) => u.id === s.default_user)) userSelect.value = s.default_user;
 
@@ -228,7 +228,34 @@ function bindEvents() {
   el("viewer-modal").addEventListener("click", (event) => {
     if (event.target.id === "viewer-modal") closeViewer();
   });
+
+  // 手机抽屉
+  for (const btn of document.querySelectorAll(".drawer-toggle")) {
+    btn.addEventListener("click", () => openDrawer(el(btn.dataset.sidebar)));
+  }
+  for (const btn of document.querySelectorAll(".sidebar-close")) {
+    btn.addEventListener("click", closeDrawer);
+  }
+  el("drawer-scrim").addEventListener("click", closeDrawer);
+
   document.addEventListener("keydown", onKeydown);
+}
+
+function openDrawer(sidebar) {
+  if (!sidebar) return;
+  closeDrawer();
+  sidebar.classList.add("open");
+  el("drawer-scrim").hidden = false;
+  document.body.classList.add("drawer-open");
+}
+
+function closeDrawer() {
+  for (const node of document.querySelectorAll(".sidebar.open")) {
+    node.classList.remove("open");
+  }
+  const scrim = el("drawer-scrim");
+  if (scrim) scrim.hidden = true;
+  document.body.classList.remove("drawer-open");
 }
 
 function syncModeFields() {
@@ -423,28 +450,26 @@ function renderItemRow(item) {
   thumb.alt = "";
   thumb.loading = "lazy";
   thumb.title = "点击预览";
-  thumb.dataset.src = withToken(
-    `/api/thumb/${encodeURIComponent(item.id)}?user=${encodeURIComponent(el("user-select").value || "auto")}`);
-  thumb.addEventListener("click", (event) => {
+  thumb.src = withToken(
+    `/api/thumb/${encodeURIComponent(item.id)}?user=${encodeURIComponent(el("user-select").value || "auto")}`);  thumb.addEventListener("click", (event) => {
     event.stopPropagation();
     openPreview(item);
   });
   thumb.addEventListener("error", () => { thumb.classList.add("missing"); });
-  ensureThumbObserver().observe(thumb);
 
   const kind = document.createElement("span");
   kind.className = `kind ${item.kind}`;
   kind.textContent = item.kind_cn;
 
-  row.append(
-    check,
-    thumb,
-    kind,
+  const meta = document.createElement("div");
+  meta.className = "item-meta";
+  meta.append(
     span("item-time", item.recorded_display),
     span("item-dur", fmtDur(item.duration_s)),
     span("item-size", fmtSize(item.size)),
-    span("item-id mono", item.id),
   );
+
+  row.append(check, thumb, kind, meta, span("item-id", item.id));
 
   const status = document.createElement("span");
   status.className = "item-status";
@@ -497,24 +522,6 @@ function renderItemRow(item) {
   action.appendChild(remove);
   row.appendChild(action);
   return row;
-}
-
-let thumbObserver = null;
-
-function ensureThumbObserver() {
-  if (thumbObserver) return thumbObserver;
-  thumbObserver = new IntersectionObserver(
-    (entries) => {
-      for (const entry of entries) {
-        if (!entry.isIntersecting) continue;
-        const img = entry.target;
-        if (img.dataset.src && !img.src) img.src = img.dataset.src;
-        thumbObserver.unobserve(img);
-      }
-    },
-    { rootMargin: "150px" }
-  );
-  return thumbObserver;
 }
 
 function openPreview(item) {
@@ -1076,6 +1083,7 @@ async function revealOutput() {
 // ---------------------------------------------------------------------------
 function switchView(view) {
   state.view = view;
+  closeDrawer();
   for (const tab of document.querySelectorAll("#view-tabs .tab")) {
     tab.classList.toggle("active", tab.dataset.view === view);
   }
@@ -1100,9 +1108,12 @@ function onUserChange() {
 }
 
 function onKeydown(event) {
+  if (event.key === "Escape") {
+    if (!el("viewer-modal").hidden) { closeViewer(); return; }
+    if (document.body.classList.contains("drawer-open")) { closeDrawer(); return; }
+  }
   if (el("viewer-modal").hidden) return;
-  if (event.key === "Escape") closeViewer();
-  else if (event.key === "ArrowLeft") viewerStep(-1);
+  if (event.key === "ArrowLeft") viewerStep(-1);
   else if (event.key === "ArrowRight") viewerStep(1);
 }
 
@@ -1284,9 +1295,6 @@ function renderShotGrid(reset = true) {
   grid.hidden = false;
   grid.classList.toggle("selecting", state.shotSelectMode);
   if (reset) {
-    for (const img of grid.querySelectorAll("img")) {
-      if (thumbObserver) thumbObserver.unobserve(img);
-    }
     grid.innerHTML = "";
     state.shotRenderCount = SHOT_BATCH;
   }
@@ -1321,10 +1329,9 @@ function renderShotTile(item, index) {
   img.loading = "lazy";
   img.decoding = "async";
   img.alt = "";
-  img.dataset.src = withToken(
+  img.src = withToken(
     `/api/screenshot/thumb/${encodeURIComponent(item.id)}?user=${encodeURIComponent(el("user-select").value || "auto")}`);
   img.addEventListener("error", () => img.classList.add("broken"));
-  ensureThumbObserver().observe(img);
   tile.appendChild(img);
 
   const check = document.createElement("span");
