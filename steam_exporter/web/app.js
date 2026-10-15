@@ -141,6 +141,7 @@ function bindEvents() {
   el("export-all").addEventListener("click", () => doExport(false));
   el("cancel-job").addEventListener("click", cancelJob);
   el("reveal-output").addEventListener("click", revealOutput);
+  el("toggle-log").addEventListener("click", () => setLogOpen(el("log").hidden));
 }
 
 function syncModeFields() {
@@ -487,6 +488,7 @@ async function doExport(useSelected) {
 }
 
 function showPlan(res) {
+  document.body.classList.add("job-active");
   el("job-panel").hidden = false;
   setJobStatus("done", "预演完成");
   el("overall-bar").style.width = "100%";
@@ -496,6 +498,7 @@ function showPlan(res) {
   const lines = res.items.slice(0, 200).map(
     (it) => `${it.source.game}  ${it.source.recorded_display}  ->  ${it.output}`);
   el("log").textContent = lines.join("\n") + (res.items.length > 200 ? "\n…" : "");
+  setLogOpen(true);
 }
 
 function startJob(jobId, planned, totalSize) {
@@ -507,6 +510,8 @@ function startJob(jobId, planned, totalSize) {
   state.bytes = 0;
 
   el("job-panel").hidden = false;
+  document.body.classList.add("job-active");
+  setLogOpen(false);
   el("log").textContent = "";
   el("cancel-job").disabled = false;
   el("item-bar").style.width = "0%";
@@ -574,6 +579,7 @@ function handleJobEvent(ev) {
       state.failed++;
       if (ev.source) setItemStatus(ev.source.id, "failed", "✗ 失败");
       appendLog(`✗ 失败：${ev.source ? ev.source.id : ""} ${ev.error || ""}`);
+      setLogOpen(true);
       updateOverall();
       break;
     case "cancelled":
@@ -581,6 +587,7 @@ function handleJobEvent(ev) {
       break;
     case "error":
       appendLog("错误：" + ev.message);
+      setLogOpen(true);
       break;
     case "finished":
       appendLog(
@@ -623,6 +630,11 @@ function appendLog(line) {
   const node = el("log");
   node.textContent += (node.textContent ? "\n" : "") + line;
   node.scrollTop = node.scrollHeight;
+}
+
+function setLogOpen(open) {
+  el("log").hidden = !open;
+  el("toggle-log").textContent = open ? "收起日志" : "日志";
 }
 
 async function cancelJob() {
