@@ -73,6 +73,20 @@ npm run build          # 产出 dist/index.js
 
 也可以优先用 Decky 设置里的「重载插件」按钮。
 
+## 打包分发
+
+```bash
+./package.sh           # 产出 SteamMediaExport-v<版本>.zip
+```
+
+ZIP 内结构：`SteamMediaExport/{plugin.json,package.json,main.py,dist/,README.md}`，
+符合 Decky「从 ZIP 安装」的要求（恰好一层 `插件名/plugin.json`）。
+安装：Decky 设置 → 开发者 → 从 ZIP 安装。
+
+> ⚠️ 本插件是「薄壳」，运行时依赖主程序仓库，默认路径
+> `~/code-study/steam-recording-exporter`。分发到别的机器时，对方需要把本仓库
+> 放在同一路径（或在设置里改 `project_dir`），并且机器上要有 `python3` 和 `ffmpeg`。
+
 ## 可调设置
 
 设置存在 `~/homebrew/settings/SteamMediaExport/settings.json`（由 Decky 的 `SettingsManager` 管理）：

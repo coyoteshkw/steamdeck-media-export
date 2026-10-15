@@ -220,6 +220,7 @@ cd decky
 npm install --legacy-peer-deps && npm run build
 ./install.sh      # 安装到 ~/homebrew/plugins/SteamMediaExport
 ./reload.sh       # 安全重载 Decky
+./package.sh      # 打成可分发的 SteamMediaExport-v<版本>.zip
 ```
 
 ---
