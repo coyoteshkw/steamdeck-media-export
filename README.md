@@ -203,6 +203,27 @@
 
 ---
 
+## Decky 插件（游戏模式一键开关）
+
+把本项目做成 **Decky Loader** 插件后，可以在 SteamOS 游戏模式的侧栏里：
+
+- 一个开关**启动 / 停止**网页管理服务（默认关闭）
+- 显示手机可访问的地址（优先 `192.168.x.x`）与**二维码**（已含 `?token=hello`）
+- 端口可改（默认 `8787`，冲突时自动顺延）
+- 回显输出目录 / 下载缓存 / 回收站 / 预览缓存
+
+插件是薄壳：后端只负责以子进程方式运行本项目的 `serve`，**主程序代码零改动**。
+详见 [`decky/README.md`](decky/README.md)。
+
+```bash
+cd decky
+npm install --legacy-peer-deps && npm run build
+./install.sh      # 安装到 ~/homebrew/plugins/SteamMediaExport
+./reload.sh       # 安全重载 Decky
+```
+
+---
+
 ## 命令详解
 
 ### `export` 常用参数
@@ -402,6 +423,15 @@ bin/steamexport   # 便捷启动脚本
 - 进度条增加剩余时间（ETA）估计
 
 ## 更新日志
+
+### 0.4.6（2026-10-16）
+
+- **修复 `--host 0.0.0.0` 启动卡顿**：标准库 `HTTPServer.server_bind()` 会对 host 做反向
+  DNS 解析，在 DNS 不可达时（如 systemd-resolved 反查主机名超时）会**阻塞约 5 秒**
+  才完成绑定，看起来像启动卡死。改用自定义 `_QuietHTTPServer` 跳过 `socket.getfqdn()`。
+- **新增 Decky Loader 插件**（[`decky/`](decky/README.md)）：游戏模式里一键开关服务，
+  面板显示手机访问地址与二维码（含 token）、端口可改并在冲突时自动顺延，
+  回显输出/缓存/回收站信息，输出目录不存在会自动创建。
 
 ### 0.4.5（2026-10-16）
 

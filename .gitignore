@@ -3,7 +3,10 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 build/
-dist/
+/dist/
+
+# Decky 插件依赖（decky/dist 应提交，安装时无需再 build）
+node_modules/
 
 # 导出产物
 *.mp4

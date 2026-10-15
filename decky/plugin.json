@@ -1,0 +1,11 @@
+{
+  "name": "SteamMediaExport",
+  "author": "code-study",
+  "flags": [],
+  "api_version": 1,
+  "publish": {
+    "tags": ["media", "screenshots", "export", "streaming"],
+    "description": "在 Steam Deck 上一键开关 Steam 录制/截图管理页面，并给出手机可访问的地址与二维码。",
+    "image": ""
+  }
+}

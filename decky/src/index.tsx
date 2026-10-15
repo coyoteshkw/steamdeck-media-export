@@ -1,0 +1,202 @@
+import { useEffect, useMemo, useState } from "react";
+import type { CSSProperties } from "react";
+import {
+  ButtonItem,
+  Field,
+  PanelSection,
+  PanelSectionRow,
+  TextField,
+  ToggleField,
+  definePlugin,
+  staticClasses,
+} from "@decky/ui";
+import { call } from "@decky/api";
+import qrcode from "qrcode-generator";
+
+interface Status {
+  running: boolean;
+  port: number;
+  configured_port: number;
+  ip: string;
+  url: string;
+  token: string;
+  project_dir: string;
+  project_ok: boolean;
+  out_dir: string;
+  hints: Record<string, string>;
+  error: string | null;
+}
+
+const HINT_LABELS: Array<[string, string]> = [
+  ["out", "输出目录"],
+  ["cache", "下载缓存"],
+  ["trash", "回收站"],
+  ["preview", "预览缓存"],
+];
+
+const small: CSSProperties = {
+  fontSize: "11px",
+  lineHeight: 1.4,
+  wordBreak: "break-all",
+  userSelect: "text",
+  opacity: 0.9,
+};
+
+const QrIcon = () => (
+  <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true">
+    <path d="M3 3h8v8H3V3zm2 2v4h4V5H5zm8-2h8v8h-8V3zm2 2v4h4V5h-4zM3 13h8v8H3v-8zm2 2v4h4v-4H5zm11-1h2v2h-2v-2zm-3 0h2v2h-2v-2zm5 3h2v2h-2v-2zm-2 2h2v2h-2v-2zm-3 0h2v2h-2v-2zm4 3h2v2h-2v-2z" />
+  </svg>
+);
+
+function Content() {
+  const [status, setStatus] = useState<Status | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [portInput, setPortInput] = useState("8787");
+
+  const refresh = async () => {
+    const next = await call<[], Status>("get_status");
+    setStatus(next);
+    setPortInput(String(next.configured_port ?? next.port));
+    return next;
+  };
+
+  useEffect(() => {
+    refresh();
+    const timer = window.setInterval(() => {
+      refresh();
+    }, 4000);
+    return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const qrDataUrl = useMemo(() => {
+    if (!status?.url) return "";
+    try {
+      const qr = qrcode(0, "M");
+      qr.addData(status.url);
+      qr.make();
+      return qr.createDataURL(4, 8);
+    } catch (err) {
+      return "";
+    }
+  }, [status?.url]);
+
+  const onToggle = async (checked: boolean) => {
+    setBusy(true);
+    try {
+      if (checked) {
+        await call<[number], Status>("start_server", Number(portInput) || 8787);
+      } else {
+        await call<[], Status>("stop_server");
+      }
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const applyPort = async () => {
+    setBusy(true);
+    try {
+      await call<[number], Status>("set_port", Number(portInput) || 8787);
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const running = !!status?.running;
+  const portChanged = status ? Number(portInput) !== status.configured_port : false;
+
+  return (
+    <PanelSection title="Steam 媒体导出" spinner={busy}>
+      <PanelSectionRow>
+        <ToggleField
+          label="启用服务"
+          description={running ? `运行中 · ${status?.ip}:${status?.port}` : "已停止"}
+          checked={running}
+          disabled={busy || status?.project_ok === false}
+          onChange={onToggle}
+        />
+      </PanelSectionRow>
+
+      {status?.error ? (
+        <PanelSectionRow>
+          <Field label="提示" bottomSeparator="none" childrenLayout="below">
+            <div style={{ ...small, color: "#ff9a9a" }}>{status.error}</div>
+          </Field>
+        </PanelSectionRow>
+      ) : null}
+
+      <PanelSectionRow>
+        <Field label="手机访问地址" bottomSeparator="none" childrenLayout="below">
+          <div style={small}>{status?.url || "—"}</div>
+        </Field>
+      </PanelSectionRow>
+
+      {qrDataUrl ? (
+        <PanelSectionRow>
+          <Field label="扫码打开" bottomSeparator="none" childrenLayout="below">
+            <div style={{ display: "flex", justifyContent: "center", width: "100%" }}>
+              <img
+                src={qrDataUrl}
+                alt="访问二维码"
+                width={170}
+                height={170}
+                style={{
+                  background: "#fff",
+                  padding: "6px",
+                  borderRadius: "6px",
+                  imageRendering: "pixelated",
+                }}
+              />
+            </div>
+          </Field>
+        </PanelSectionRow>
+      ) : null}
+
+      <PanelSectionRow>
+        <TextField
+          label="端口"
+          value={portInput}
+          mustBeNumeric
+          disabled={busy}
+          description="默认 8787，被占用时自动顺延"
+          onChange={(e) => setPortInput(e.target.value)}
+        />
+      </PanelSectionRow>
+
+      <PanelSectionRow>
+        <ButtonItem layout="below" disabled={busy || !portChanged} onClick={applyPort}>
+          {running ? "应用端口并重启" : "保存端口"}
+        </ButtonItem>
+      </PanelSectionRow>
+
+      {HINT_LABELS.map(([key, label]) =>
+        status?.hints?.[key] ? (
+          <PanelSectionRow key={key}>
+            <Field label={label} bottomSeparator="none" childrenLayout="below">
+              <div style={small}>{status.hints[key]}</div>
+            </Field>
+          </PanelSectionRow>
+        ) : null
+      )}
+
+      {status?.project_ok === false ? (
+        <PanelSectionRow>
+          <Field label="项目目录" bottomSeparator="none" childrenLayout="below">
+            <div style={{ ...small, color: "#ff9a9a" }}>未找到：{status.project_dir}</div>
+          </Field>
+        </PanelSectionRow>
+      ) : null}
+    </PanelSection>
+  );
+}
+
+export default definePlugin(() => ({
+  name: "SteamMediaExport",
+  title: <div className={staticClasses.Title}>Steam 媒体导出</div>,
+  content: <Content />,
+  icon: <QrIcon />,
+  onDismount() {},
+}));
