@@ -403,6 +403,18 @@ bin/steamexport   # 便捷启动脚本
 
 ## 更新日志
 
+### 0.3.3（2026-10-16）
+
+- **真正定位并修复截图网格重叠**：`grid` 的自动行在做内在尺寸计算时，
+  既不认 `aspect-ratio` 也不认百分比 `padding`（列宽是 `1fr`，算行高时宽度未定），
+  于是行高塌成 ~10px、每个格子却 ~100px 高，全部上下叠在一起
+  - 改用 `flex-wrap` + 固定尺寸（`.shot-tile` 154×96、游戏卡 190 宽），
+    图片 `height:100%` 填充，彻底不依赖内在尺寸计算
+- **静态文件加 `ETag`**：浏览器每次带 `If-None-Match` 校验，改了 `style.css`/`app.js`
+  刷新即生效（没改则 304），避免“代码改了但浏览器用旧缓存”的坑
+- 新增直达链接：`/?view=screenshots`、`/?view=screenshots&mode=games`
+- 借助无头浏览器（chrome-headless-shell）实测两种视图渲染，确认不再重叠
+
 ### 0.3.2（2026-10-16）
 
 - 修复平铺截图网格（`.shot-tile`）高度塌陷：网格默认 `align-items:stretch`

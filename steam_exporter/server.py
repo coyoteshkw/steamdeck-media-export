@@ -1289,7 +1289,27 @@ class Handler(BaseHTTPRequestHandler):
         if not target.is_file():
             return self._error(404, "未找到")
         content_type = CONTENT_TYPES.get(target.suffix, "application/octet-stream")
-        self._send_bytes(target.read_bytes(), content_type, cache="no-cache")
+        try:
+            stat = target.stat()
+        except OSError:
+            return self._error(404, "未找到")
+        etag = f'"{int(stat.st_mtime)}-{stat.st_size}"'
+        if self.headers.get("If-None-Match") == etag:
+            self.send_response(304)
+            self.send_header("ETag", etag)
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            self._responded = True
+            return
+        body = target.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("ETag", etag)
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self._responded = True
+        self.wfile.write(body)
 
 
 def download_filename(source) -> str:

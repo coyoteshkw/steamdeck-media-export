@@ -109,6 +109,16 @@ async function init() {
   }
   bindEvents();
   await loadRecordings();
+  const initial = new URLSearchParams(location.search);
+  if (initial.get("view") === "screenshots") {
+    if (initial.get("mode") === "games") {
+      state.shotMode = "games";
+      for (const tab of document.querySelectorAll("#shot-modes .tab")) {
+        tab.classList.toggle("active", tab.dataset.mode === "games");
+      }
+    }
+    switchView("screenshots");
+  }
 }
 
 function applySummary(s) {

@@ -452,20 +452,21 @@ body.job-active .layout { padding-bottom: 96px; }
 /* 截图视图 */
 .shot-title { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 42vw; }
 
+/* 游戏卡：flex-wrap + 固定尺寸（grid 的 auto 行不认 aspect-ratio，会重叠） */
 .shot-games {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(156px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 12px;
-  align-content: start;
-  align-items: start;
+  align-content: flex-start;
   padding: 2px;
 }
 .shot-game {
   position: relative;
-  display: block;
+  flex: 0 0 auto;
+  width: 190px;
   padding: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -483,7 +484,7 @@ body.job-active .layout { padding-bottom: 96px; }
 .shot-game-thumb {
   position: relative;
   width: 100%;
-  padding-top: 56.25%; /* 16:9，用 padding 撑高，避免 <button>/flex 下图片高度塌陷 */
+  height: 107px; /* 190 * 9/16 */
   overflow: hidden;
   background: linear-gradient(135deg, #2a3244, #1b212c);
 }
@@ -503,26 +504,23 @@ body.job-active .layout { padding-bottom: 96px; }
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
-  align-content: start;
-  align-items: start;
+  align-content: flex-start;
   padding: 2px;
 }
-.shot-more { grid-column: 1 / -1; }
+.shot-more { flex: 0 0 100%; }
 .shot-tile {
   position: relative;
+  flex: 0 0 auto;
+  width: 154px;
+  height: 96px; /* 154 * 10/16 */
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
   cursor: pointer;
   background: linear-gradient(135deg, #2a3244, #1b212c);
-}
-.shot-tile::before {
-  content: "";
-  display: block;
-  padding-top: 62.5%; /* 16:10，用 padding 撑高：网格里 align-items:stretch 会让 aspect-ratio 失效 */
 }
 .shot-tile img {
   position: absolute;
@@ -621,7 +619,10 @@ body.job-active .layout { padding-bottom: 96px; }
   body.job-active .layout { padding-bottom: 150px; }
   .jobbar-main { flex-wrap: wrap; gap: 10px; }
   .jobbar-actions { width: 100%; justify-content: flex-end; }
-  .shot-games { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); }
+  .shot-games { gap: 8px; }
+  .shot-game { width: 168px; }
+  .shot-game-thumb { height: 94px; }
+  .shot-tile { width: 140px; height: 88px; }
 }
 
 /* 手机：进一步压缩 */
@@ -654,8 +655,11 @@ body.job-active .layout { padding-bottom: 96px; }
   body.job-active .layout { padding-bottom: 172px; }
   .appbar .tabs { order: 3; width: 100%; justify-content: center; }
   .tab { flex: 1; }
-  .shot-games { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
-  .shot-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 6px; }
+  .shot-games { gap: 8px; }
+  .shot-game { width: 148px; }
+  .shot-game-thumb { height: 83px; }
+  .shot-grid { gap: 6px; }
+  .shot-tile { width: 118px; height: 74px; }
   .shot-title { max-width: 60vw; }
   .viewer-nav { width: 40px; height: 40px; font-size: 26px; }
 }
