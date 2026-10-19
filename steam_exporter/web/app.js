@@ -235,6 +235,7 @@ function bindEvents() {
     const item = state.shotItems[state.viewerIndex];
     if (item) downloadShot(item);
   });
+  el("viewer-copy").addEventListener("click", copyViewerImage);
   el("viewer-modal").addEventListener("click", (event) => {
     // 点图片外的空白处（modal 或 stage 背景）关闭；点图片本身不关闭
     const id = event.target.id;
@@ -1477,6 +1478,122 @@ function downloadShot(item) {
   const user = el("user-select").value || "auto";
   triggerUrl(withToken(
     `/api/screenshot/full/${encodeURIComponent(item.id)}?user=${encodeURIComponent(user)}&dl=1`));
+}
+
+// ---------------------------------------------------------------------------
+// 复制图片到剪贴板（写博客时直接粘贴到图床）
+// ---------------------------------------------------------------------------
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("读取图片失败"));
+    reader.readAsDataURL(blob);
+  });
+}
+
+// 剪贴板图片要求 PNG，原图多为 JPEG，这里用 canvas 转一下
+function toPngBlob(blob) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const image = new Image();
+    image.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = image.naturalWidth;
+        canvas.height = image.naturalHeight;
+        canvas.getContext("2d").drawImage(image, 0, 0);
+        canvas.toBlob(
+          (out) => {
+            URL.revokeObjectURL(url);
+            out ? resolve(out) : reject(new Error("PNG 转换失败"));
+          },
+          "image/png"
+        );
+      } catch (err) {
+        URL.revokeObjectURL(url);
+        reject(err);
+      }
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("图片解码失败"));
+    };
+    image.src = url;
+  });
+}
+
+async function writeImageToClipboard(pngBlob) {
+  // 安全上下文（localhost / HTTPS）可用异步剪贴板
+  if (navigator.clipboard && window.ClipboardItem) {
+    try {
+      const pending = navigator.clipboard.write([
+        new ClipboardItem({ "image/png": pngBlob }),
+      ]);
+      // 某些环境（无剪贴板后端 / 无焦点）会一直挂起，加个超时后走兜底
+      await Promise.race([
+        pending,
+        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 1500)),
+      ]);
+      return true;
+    } catch (err) {
+      /* 继续走兜底 */
+    }
+  }
+  // 兜底：把图放进临时 contenteditable 选中后 execCommand，
+  // 局域网 HTTP（非安全上下文）下也能把图片复制到剪贴板。
+  const holder = document.createElement("div");
+  holder.contentEditable = "true";
+  holder.style.cssText = "position:fixed;left:-99999px;top:0;";
+  const image = new Image();
+  image.src = await blobToDataUrl(pngBlob);
+  // execCommand 复制图片需要图片已解码
+  await new Promise((resolve, reject) => {
+    image.onload = resolve;
+    image.onerror = () => reject(new Error("图片解码失败"));
+  });
+  holder.appendChild(image);
+  document.body.appendChild(holder);
+  try {
+    const range = document.createRange();
+    range.selectNodeContents(holder);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    return document.execCommand("copy");
+  } finally {
+    window.getSelection().removeAllRanges();
+    holder.remove();
+  }
+}
+
+async function copyViewerImage() {
+  const item = state.shotItems[state.viewerIndex];
+  if (!item) return;
+  const button = el("viewer-copy");
+  if (button.disabled) return;
+  button.disabled = true;
+  button.textContent = "复制中…";
+  try {
+    const user = el("user-select").value || "auto";
+    const res = await fetch(withToken(
+      `/api/screenshot/full/${encodeURIComponent(item.id)}?user=${encodeURIComponent(user)}`));
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const png = await toPngBlob(await res.blob());
+    if (await writeImageToClipboard(png)) {
+      button.textContent = "已复制";
+      toast("图片已复制，可直接粘贴到图床");
+      setTimeout(() => { button.textContent = "复制"; }, 1400);
+      return;
+    }
+    button.textContent = "复制";
+    toast("当前浏览器不支持复制图片，请改用「下载」");
+  } catch (err) {
+    button.textContent = "复制";
+    toast("复制失败：" + err.message);
+  } finally {
+    button.disabled = false;
+  }
 }
 
 async function downloadShots(items, confirmLarge = false) {
