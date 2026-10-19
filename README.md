@@ -441,6 +441,12 @@ bin/steamexport   # 便捷启动脚本
 
 ## 更新日志
 
+### 0.4.7（2026-10-16）
+
+- **修复桌面端「按分类」游戏封面被压扁**：`.shot-games` 是 `flex: 1` 的定高容器，
+  默认 `grid-auto-rows: auto` 会被浏览器压扁去「填满」容器——窗口越矮，封面裁切越严重。
+  改为 `grid-auto-rows: min-content`，行高按内容决定，放不下就正常滚动。
+
 ### 0.4.6（2026-10-16）
 
 - **修复 `--host 0.0.0.0` 启动卡顿**：标准库 `HTTPServer.server_bind()` 会对 host 做反向

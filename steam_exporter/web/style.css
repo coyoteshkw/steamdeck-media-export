@@ -441,6 +441,9 @@ img.game-thumb { display: block; }
   overflow-y: auto;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  /* 行高按内容决定：.shot-games 是 flex:1 的定高容器，若用默认的 auto，
+     浏览器会把行压扁去「填满」容器（矮窗口下封面被裁切）。 */
+  grid-auto-rows: min-content;
   gap: 12px;
   align-content: start;
   padding: 2px;
