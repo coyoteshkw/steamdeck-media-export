@@ -217,6 +217,8 @@ function bindEvents() {
   el("shot-select-toggle").addEventListener("click", () => setShotSelectMode(!state.shotSelectMode));
   el("shot-download-zip").addEventListener("click", downloadSelectedZip);
   el("selbar-zip").addEventListener("click", downloadSelectedZip);
+  el("shot-select-all").addEventListener("click", selectAllShots);
+  el("selbar-all").addEventListener("click", selectAllShots);
   el("shot-download-all").addEventListener("click", downloadAllShots);
   el("shot-download-selected").addEventListener("click", () => downloadShots(selectedShotItems()));
   el("shot-clear-selection").addEventListener("click", clearShotSelection);
@@ -1448,12 +1450,30 @@ function clearShotSelection() {
   updateShotSelection();
 }
 
+// 全选：只用于「某个游戏详情」（全部视图已有「打包下载全部结果」）
+function selectAllShots() {
+  for (const item of state.shotItems) state.shotSelected.add(item.id);
+  for (const tile of el("shot-grid").querySelectorAll(".shot-tile")) {
+    tile.classList.add("selected");
+  }
+  updateShotSelection();
+}
+
 function selectedShotItems() {
   return state.shotItems.filter((item) => state.shotSelected.has(item.id));
 }
 
 function updateShotSelection() {
   const n = state.shotSelected.size;
+  const total = state.shotItems.length;
+  // 「全选」只在游戏详情 + 多选模式下出现；已全选时置灰
+  const showAll = state.shotSelectMode && !!state.shotGame;
+  const allDone = total === 0 || n >= total;
+  el("shot-select-all").hidden = !showAll;
+  el("shot-select-all").disabled = allDone;
+  el("selbar-all").hidden = !showAll;
+  el("selbar-all").disabled = allDone;
+
   const toggle = el("shot-select-toggle");
   if (!toggle.hidden) {
     toggle.textContent = state.shotSelectMode
