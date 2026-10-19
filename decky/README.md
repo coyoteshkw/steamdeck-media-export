@@ -11,20 +11,33 @@
 - **信息回显**：输出目录 / 下载缓存 / 回收站 / 预览缓存（与命令行启动输出一致）
 - 启动前若输出目录不存在会**自动创建**
 
-## 架构（B2）
+## 使用
 
-插件本身只是**薄壳**，不做任何媒体处理：
+1. 游戏模式按 `...` 打开快捷菜单 → 点 **Decky** 图标 → **「Steam 媒体导出」**
+2. 打开 **「启用服务」** 开关（默认关闭、不记忆上次状态）
+3. 面板会出现手机访问地址和**二维码**，手机扫一下即可打开管理页
+4. 不用时把开关关掉即可停止服务
+
+面板上还能：
+
+- 看到**代码来源**（内置 / 仓库）以及输出目录、下载缓存、回收站、预览缓存等路径
+- 改**端口**（默认 `8787`，被占用会自动顺延）→ 点「应用端口并重启」
+- 服务未启动时地址会**灰显**、二维码**不显示**（避免扫了连不上）
+
+## 架构
+
+插件本身不做任何媒体处理，只负责 spawn 主程序：
 
 ```
 Decky 面板 (React)  ──call()──▶  decky/main.py (Decky 自带 Python)
                                       │  subprocess
                                       ▼
-                         /usr/bin/python3 -m steam_exporter serve
-                                      cwd = ~/code-study/steam-recording-exporter
+                         /usr/bin/python3 -u -m steam_exporter serve
+                                      cwd = <主程序目录>
 ```
 
-- 项目代码**零改动**，改完主程序只要在面板里关开一次开关即可生效，**无需重新打包插件**。
-- 只有改面板 UI（`src/index.tsx`）时才需要 `npm run build` + 重载插件。
+`<主程序目录>` 三选一（判定顺序见下文「打包分发」）：设置里的 `project_dir` /
+包内 `vendor/`（自包含包）/ 默认仓库路径。
 
 ## 目录
 
@@ -74,6 +87,18 @@ npm run build          # 产出 dist/index.js
 
 也可以优先用 Decky 设置里的「重载插件」按钮。
 
+## 改完代码要做什么
+
+| 改了什么 | 需要 build | 需要重装到本机 | 需要重新打 ZIP |
+|---|---|---|---|
+| 主程序 `steam_exporter/`、`web/`（薄壳模式） | 否 | 否，面板里关开开关即可 | 否 |
+| 主程序（自包含模式，已分发给别人） | 否 | 否 | **是**（vendor 是快照） |
+| 插件面板 `src/index.tsx` | 是 | 是 | 是（如果要分发） |
+| 插件后端 `main.py` / `plugin.json` | 否 | 是 | 是（如果要分发） |
+
+> 「重装到本机」= `./install.sh` + `./reload.sh`；「重新打 ZIP」= `./package.sh`。
+> 本机调试**不需要** `package.sh`。
+
 ## 打包分发
 
 ```bash
@@ -84,7 +109,7 @@ npm run build          # 产出 dist/index.js
 | 模式 | 内容 | 适合 |
 |---|---|---|
 | 薄壳（默认） | 只插件本体（~48KB） | 本机 / 仓库也在同一路径的机器 |
-| 自包含 | 额外带 `vendor/steam_exporter/`（~500KB） | **分发给别人**，对方没有本仓库 |
+| 自包含 | 额外带 `vendor/steam_exporter/`（~130KB） | **分发给别人**，对方没有本仓库 |
 
 两者都符合 Decky「从 ZIP 安装」的要求（恰好一层 `插件名/plugin.json`）。
 安装：Decky 设置 → 开发者 → 从 ZIP 安装。
@@ -98,6 +123,9 @@ npm run build          # 产出 dist/index.js
 所以：**自包含包分发出去后不依赖仓库**；本机开发用薄壳包，改主程序后
 开关关开一次即可生效（无需重打包）。
 
+> 自包含包里的 `vendor/` 是**打包那一刻的快照**。之后改了主程序还想分发新版本，
+> 需要重新 `./package.sh --self-contained`，否则对方跑的还是旧代码。
+
 > ⚠️ 两种模式都要求目标机器有 `python3` 和 `ffmpeg`（SteamOS 自带）。
 
 ## 可调设置
@@ -107,6 +135,6 @@ npm run build          # 产出 dist/index.js
 | 键 | 默认 | 说明 |
 |---|---|---|
 | `port` | `8787` | 服务端口 |
-| `project_dir` | `~/code-study/steam-recording-exporter` | 自定义主程序路径；留空则按「内置 → 仓库」顺序自动选 |
+| `project_dir` | 未设置（自动） | 自定义主程序路径；判定顺序：内置 `vendor/` → 默认仓库路径 |
 | `out_dir` | `~/Videos/SteamExports` | 默认输出目录 |
 | `token` | `hello` | 访问令牌 |

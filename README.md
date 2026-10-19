@@ -210,20 +210,34 @@
 - 一个开关**启动 / 停止**网页管理服务（默认关闭）
 - 显示手机可访问的地址（优先 `192.168.x.x`）与**二维码**（已含 `?token=hello`）
 - 端口可改（默认 `8787`，冲突时自动顺延）
-- 回显输出目录 / 下载缓存 / 回收站 / 预览缓存
+- 回显输出目录 / 下载缓存 / 回收站 / 预览缓存，以及实际使用的**代码来源**
 
-插件是薄壳：后端只负责以子进程方式运行本项目的 `serve`，**主程序代码零改动**。
-详见 [`decky/README.md`](decky/README.md)。
+**用法**：游戏模式按 `...` → Decky 图标 → 「Steam 媒体导出」→ 打开「启用服务」→
+手机扫二维码。展开说明见 [`decky/README.md`](decky/README.md)。
+
+插件后端只负责以子进程方式运行本项目的 `serve`，主程序代码零改动。
+
+两种打包方式：
+
+| 方式 | 命令 | 说明 |
+|---|---|---|
+| 薄壳 | `./package.sh` | 不含主程序，依赖目标机器上的仓库 |
+| 自包含 | `./package.sh --self-contained` | 把 `steam_exporter/` 打进 `vendor/`，**分发用** |
 
 ```bash
 cd decky
 npm install --legacy-peer-deps && npm run build
-./install.sh                   # 薄壳：安装到 ~/homebrew/plugins/SteamMediaExport
-./install.sh --self-contained  # 自包含：额外把 steam_exporter/ 复制进 vendor/
+./install.sh                   # 安装到 ~/homebrew/plugins/SteamMediaExport（薄壳）
+./install.sh --self-contained  # 安装自包含版（主程序复制进 vendor/）
 ./reload.sh                    # 安全重载 Decky
-./package.sh                   # 打成薄壳 ZIP
-./package.sh --self-contained  # 打成自包含 ZIP（分发给没仓库的人）
+./package.sh                   # 打薄壳 ZIP
+./package.sh --self-contained  # 打自包含 ZIP（分发给没仓库的人）
 ```
+
+安装 ZIP：Decky 设置 → 开发者 → 从 ZIP 安装。
+
+> 通用要求：目标机器有 `python3` 和 `ffmpeg`（SteamOS 自带）。
+> 薄壳模式还需要本仓库位于 `~/code-study/steam-recording-exporter`（或设置 `project_dir`）。
 
 ---
 
