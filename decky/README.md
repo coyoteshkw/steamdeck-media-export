@@ -89,15 +89,28 @@ npm run build          # 产出 dist/index.js
 
 ## 改完代码要做什么
 
-| 改了什么 | 需要 build | 需要重装到本机 | 需要重新打 ZIP |
-|---|---|---|---|
-| 主程序 `steam_exporter/`、`web/`（薄壳模式） | 否 | 否，面板里关开开关即可 | 否 |
-| 主程序（自包含模式，已分发给别人） | 否 | 否 | **是**（vendor 是快照） |
-| 插件面板 `src/index.tsx` | 是 | 是 | 是（如果要分发） |
-| 插件后端 `main.py` / `plugin.json` | 否 | 是 | 是（如果要分发） |
+**B2（薄壳）下，主程序改动完全不用碰插件**：插件只是启动仓库里的 `serve`，
+每次启动都现读仓库代码。只有改 `decky/` 里的东西才需要重装插件。
 
-> 「重装到本机」= `./install.sh` + `./reload.sh`；「重新打 ZIP」= `./package.sh`。
-> 本机调试**不需要** `package.sh`。
+| 改了什么 | 要 build | 要装插件 | 要重打 ZIP | 怎么生效 |
+|---|---|---|---|---|
+| `steam_exporter/web/*`（HTML/JS/CSS） | 否 | 否 | 否 | **刷新浏览器**（静态文件每次请求读盘） |
+| `steam_exporter/*.py`（后端） | 否 | 否 | 否 | **重启服务**（插件里关开开关，或重启 `serve`） |
+| `decky/src/index.tsx`（面板 UI） | **是** | **是** | 分发时 | `npm run build` → `install.sh` → `reload.sh` |
+| `decky/main.py` / `plugin.json` / `package.json` | 否 | **是** | 分发时 | `install.sh` → `reload.sh` |
+| 自包含包（A）已经分发给别人 | 否 | 否 | **是** | 重新 `package.sh --self-contained` |
+
+> 一句话：**改主程序不用跑任何脚本**（前端刷新、后端重启服务）；
+> 只有改 Decky 面板本身才需要 `build + install.sh + reload.sh`。
+> `package.sh` 只在「要分发」时才需要，本机调试不用。
+
+### 两套版本号
+
+- **插件版本**：`decky/package.json` 的 `version`（当前 `0.1.x`），决定 ZIP 文件名。
+- **主程序版本**：`steam_exporter/__init__.py` / `pyproject.toml`（当前 `0.4.x`），
+  显示在网页顶栏和插件面板里。
+- 自包含 ZIP 名用的是**插件版本**，里面捆的 `vendor/steam_exporter` 是打包那一刻的
+  **主程序版本**（内容以 ZIP 生成时间为准）。
 
 ## 打包分发
 
