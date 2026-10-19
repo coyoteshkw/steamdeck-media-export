@@ -1000,10 +1000,14 @@ class Handler(BaseHTTPRequestHandler):
         )
 
     def _handle_shot_zip(self, query: dict) -> None:
-        """把筛选出的截图打包成 ZIP 流式下载（不压缩、不落盘）。"""
+        """把筛选出的（或指定 id 的）截图打包成 ZIP 流式下载（不压缩、不落盘）。"""
         user = query.get("user", ["auto"])[0]
-        filters = self._shot_filters(query)
-        shots = filter_screenshots(self.state.screenshots(user), filters)
+        wanted_ids = {item for item in (query.get("ids") or []) if item}
+        shots = self.state.screenshots(user)
+        if wanted_ids:
+            shots = [shot for shot in shots if shot.id in wanted_ids]
+        else:
+            shots = filter_screenshots(shots, self._shot_filters(query))
         shots = sort_screenshots(shots, newest_first=True)
         if not shots:
             return self._error(404, "没有可打包的截图")

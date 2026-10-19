@@ -215,7 +215,8 @@ function bindEvents() {
     tab.addEventListener("click", () => switchShotMode(tab.dataset.mode));
   }
   el("shot-select-toggle").addEventListener("click", () => setShotSelectMode(!state.shotSelectMode));
-  el("shot-download-page").addEventListener("click", downloadShotPage);
+  el("shot-download-zip").addEventListener("click", downloadSelectedZip);
+  el("selbar-zip").addEventListener("click", downloadSelectedZip);
   el("shot-download-all").addEventListener("click", downloadAllShots);
   el("shot-download-selected").addEventListener("click", () => downloadShots(selectedShotItems()));
   el("shot-clear-selection").addEventListener("click", clearShotSelection);
@@ -1222,7 +1223,6 @@ function renderShotAll(data) {
   el("shot-grid").hidden = false;
   el("shot-back").hidden = true;
   el("shot-title").textContent = "全部截图";
-  el("shot-download-page").hidden = false;
   el("shot-select-toggle").hidden = false;
   el("shot-info").textContent = `${data.count} 张 · ${fmtSize(data.total_size)}`;
   state.shotRenderCount = SHOT_BATCH;
@@ -1248,7 +1248,6 @@ function renderShotGames(data) {
   wrap.hidden = false;
   wrap.innerHTML = "";
   el("shot-back").hidden = true;
-  el("shot-download-page").hidden = true;
   el("shot-select-toggle").hidden = true;
   setShotSelectMode(false);
   el("shot-title").textContent = "全部游戏";
@@ -1310,7 +1309,6 @@ async function openShotGame(gameid, name) {
   state.shotGameName = name;
   el("shot-back").hidden = false;
   el("shot-title").textContent = name;
-  el("shot-download-page").hidden = false;
   el("shot-select-toggle").hidden = false;
   syncUrl();
   await loadShotItems();
@@ -1330,7 +1328,6 @@ async function loadShotItems() {
   params.set("game", state.shotGame);
   el("shot-back").hidden = false;
   el("shot-title").textContent = state.shotGameName || "游戏截图";
-  el("shot-download-page").hidden = false;
   el("shot-select-toggle").hidden = false;
   el("shot-info").textContent = "加载中…";
   try {
@@ -1421,6 +1418,7 @@ function setShotSelectMode(on) {
   if (grid) grid.classList.toggle("selecting", on);
   el("shot-select-toggle").classList.toggle("primary", on);
   el("shot-download-selected").hidden = !on;
+  el("shot-download-zip").hidden = !on;
   el("shot-delete-selected").hidden = !on;
   el("shot-clear-selection").hidden = !on;
   updateSelbar();
@@ -1436,7 +1434,7 @@ function updateSelbar() {
   const toggle = el("selbar-select");
   toggle.textContent = on ? "完成" : "选择";
   toggle.classList.toggle("primary", on);
-  for (const id of ["selbar-count", "selbar-clear", "selbar-delete", "selbar-download"]) {
+  for (const id of ["selbar-count", "selbar-clear", "selbar-delete", "selbar-zip", "selbar-download"]) {
     el(id).hidden = !on;
   }
 }
@@ -1463,11 +1461,14 @@ function updateShotSelection() {
       : (n ? `选择（已选 ${n}）` : "选择");
   }
   el("shot-download-selected").disabled = n === 0;
+  el("shot-download-zip").disabled = n === 0;
   el("shot-delete-selected").disabled = n === 0;
   el("shot-clear-selection").disabled = n === 0;
   el("shot-download-selected").textContent = n ? `下载选中（${n}）` : "下载选中";
+  el("shot-download-zip").textContent = n ? `打包选中（${n}）` : "打包选中";
   el("shot-delete-selected").textContent = n ? `删除选中（${n}）` : "删除选中";
   el("selbar-download").disabled = n === 0;
+  el("selbar-zip").disabled = n === 0;
   el("selbar-delete").disabled = n === 0;
   el("selbar-clear").disabled = n === 0;
   el("selbar-count").textContent = `已选 ${n}`;
@@ -1494,11 +1495,24 @@ async function downloadShots(items, confirmLarge = false) {
 }
 
 function downloadShotZip(extra = {}) {
-  const params = shotFilterParams();
+  // 指定 ids 时只打包这些，忽略当前筛选条件（避免 URL 冗长）
+  const params = extra.ids && extra.ids.length ? new URLSearchParams() : shotFilterParams();
   for (const [key, value] of Object.entries(extra)) {
-    if (value) params.set(key, value);
+    if (Array.isArray(value)) {
+      for (const item of value) if (item) params.append(key, item);
+    } else if (value) {
+      params.set(key, value);
+    }
   }
   triggerUrl(withToken("/api/screenshots/zip?" + params.toString()));
+}
+
+function downloadSelectedZip() {
+  const items = selectedShotItems();
+  if (!items.length) { toast("没有选中截图"); return; }
+  const size = items.reduce((sum, item) => sum + (item.size || 0), 0);
+  if (!window.confirm(`打包 ${items.length} 张（约 ${fmtSize(size)}）为 ZIP 下载？`)) return;
+  downloadShotZip({ ids: items.map((item) => item.id) });
 }
 
 async function downloadAllShots() {
@@ -1511,14 +1525,6 @@ async function downloadAllShots() {
   } catch (err) {
     toast("下载失败：" + err.message);
   }
-}
-
-function downloadShotPage() {
-  const items = state.shotItems || [];
-  if (!items.length) { toast("没有可下载的截图"); return; }
-  const size = items.reduce((sum, item) => sum + (item.size || 0), 0);
-  if (!window.confirm(`打包 ${items.length} 张（约 ${fmtSize(size)}）为 ZIP 下载？`)) return;
-  downloadShotZip(state.shotGame ? { game: state.shotGame } : {});
 }
 
 function openViewer(index) {

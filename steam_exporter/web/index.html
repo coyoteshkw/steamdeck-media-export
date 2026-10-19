@@ -187,8 +187,9 @@
 <div class="selbar" id="shot-selbar" hidden>
   <span class="selbar-count" id="selbar-count" hidden>已选 0</span>
   <span class="spacer"></span>
-  <button class="btn small" id="selbar-clear" hidden>取消选中</button>
+  <button class="btn small" id="selbar-clear" hidden>取消</button>
   <button class="btn small danger" id="selbar-delete" hidden>删除</button>
+  <button class="btn small" id="selbar-zip" hidden>打包</button>
   <button class="btn small primary" id="selbar-download" hidden>下载</button>
   <button class="btn small" id="selbar-select">选择</button>
 </div>
@@ -276,9 +277,9 @@
         <button class="tab active" data-mode="all">全部</button>
         <button class="tab" data-mode="games">按分类</button>
       </div>
-      <button class="btn small" id="shot-download-page" hidden>打包下载</button>
       <button class="btn small sel-toolbar" id="shot-select-toggle" hidden>选择</button>
       <button class="btn small sel-toolbar" id="shot-download-selected" hidden disabled>下载选中</button>
+      <button class="btn small sel-toolbar" id="shot-download-zip" hidden disabled>打包选中</button>
       <button class="btn danger small sel-toolbar" id="shot-delete-selected" hidden disabled>删除选中</button>
       <button class="btn small sel-toolbar" id="shot-clear-selection" hidden disabled>取消选中</button>
     </div>
