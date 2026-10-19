@@ -177,7 +177,7 @@ class TestZipName(ShotFixture):
     def test_zip_and_file_names(self):
         shot = next(s for s in self.scan() if s.game_id == "1030300")
         zip_name = screenshot_zip_name(shot)
-        self.assertTrue(zip_name.startswith("测试游戏/"))
+        self.assertNotIn("/", zip_name)  # 平铺，不再按游戏名建子文件夹
         self.assertTrue(zip_name.endswith(".jpg"))
         self.assertIn(" - ", screenshot_filename(shot))
 

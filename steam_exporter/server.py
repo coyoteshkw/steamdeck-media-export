@@ -1332,11 +1332,10 @@ def screenshot_filename(shot) -> str:
 
 
 def screenshot_zip_name(shot) -> str:
-    """ZIP 包内的路径：``游戏名/时间.jpg``。"""
-    game = sanitize_value(shot.game or "screenshot") or "screenshot"
+    """ZIP 包内的文件名：``时间.jpg``（平铺，不分游戏文件夹）。"""
     stamp = shot.recorded_at.astimezone().strftime("%Y-%m-%d %H-%M-%S")
     ext = shot.path.suffix or ".jpg"
-    return f"{game}/{stamp}{ext}"
+    return f"{stamp}{ext}"
 
 
 def _shot_count(userdata: Path) -> int:
