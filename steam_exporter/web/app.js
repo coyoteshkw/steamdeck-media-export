@@ -1244,8 +1244,18 @@ function renderShotGameCard(game) {
   const art = document.createElement("img");
   art.loading = "lazy";
   art.alt = "";
+  // 没有游戏封面时（非 Steam 应用 / 卸载过的游戏 / 冷门 appid），
+  // 用该游戏第一张截图的缩略图兜底，保证每张卡片都有图。
+  const coverSample = game.samples && game.samples[0];
   art.src = withToken(`/api/icon/${encodeURIComponent(game.appid)}`);
-  art.addEventListener("error", () => { art.style.visibility = "hidden"; });
+  art.addEventListener("error", () => {
+    if (coverSample && !art.dataset.fallback) {
+      art.dataset.fallback = "1";
+      art.src = withToken(`/api/screenshot/thumb/${encodeURIComponent(coverSample)}`);
+    } else {
+      art.style.visibility = "hidden";
+    }
+  });
   thumb.appendChild(art);
 
   const meta = document.createElement("div");

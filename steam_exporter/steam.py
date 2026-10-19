@@ -149,6 +149,121 @@ def parse_binary_vdf(buf: bytes, offset: int = 0) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# appinfo.vdf：卸载游戏的名字兜底
+# ---------------------------------------------------------------------------
+def _parse_appinfo(path: Path) -> dict[str, str]:
+    """解析 ``appcache/appinfo.vdf``（v41），返回 ``{appid: name}``。
+
+    `appmanifest_*.acf` 在游戏卸载后会被删掉，`shortcuts.vdf` 只覆盖非 Steam
+    快捷方式；所以「装过又卸载」的 Steam 游戏名，本地只剩 appinfo.vdf 里有。
+
+    v41 布局：magic/universe/字符串表偏移，然后是重复的
+    ``appid(4) + size(4) + [infostate(4) lastupdated(4) token(8) sha1(20)
+    changenumber(4) bsha1(20)] + binary VDF``。
+    binary VDF 里 **键是字符串表索引（u32），字符串值则是内联的 null 结尾字符串**。
+
+    只处理 v41（magic 0x07564429）；其它版本或解析异常直接返回空，不影响原有逻辑。
+    """
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return {}
+    if len(data) < 20:
+        return {}
+    try:
+        magic = struct.unpack_from("<I", data, 0)[0]
+        strtab = struct.unpack_from("<q", data, 8)[0]
+    except struct.error:
+        return {}
+    if magic != 0x07564429 or not (20 <= strtab < len(data)):
+        return {}
+
+    try:
+        count = struct.unpack_from("<I", data, strtab)[0]
+        pool: list[str] = []
+        i = strtab + 4
+        for _ in range(count):
+            end = data.index(b"\x00", i)
+            pool.append(data[i:end].decode("utf-8", "replace"))
+            i = end + 1
+    except (struct.error, ValueError):
+        return {}
+
+    def read_vdf(buf: bytes, offset: int) -> tuple[dict, int]:
+        out: dict = {}
+        o = offset
+        while o < len(buf):
+            tag = buf[o]
+            o += 1
+            if tag == 0x08:  # end
+                return out, o
+            if tag == 0x00:  # 嵌套
+                key = struct.unpack_from("<I", buf, o)[0]
+                o += 4
+                if key >= len(pool):
+                    return out, o
+                out[pool[key]], o = read_vdf(buf, o)
+            elif tag == 0x01:  # 字符串：键=索引，值=内联
+                key = struct.unpack_from("<I", buf, o)[0]
+                o += 4
+                if key >= len(pool):
+                    return out, o
+                end = buf.index(b"\x00", o)
+                out[pool[key]] = buf[o:end].decode("utf-8", "replace")
+                o = end + 1
+            elif tag == 0x02:  # int32
+                key = struct.unpack_from("<I", buf, o)[0]
+                o += 4
+                out[pool[key]] = struct.unpack_from("<i", buf, o)[0]
+                o += 4
+            elif tag == 0x03:  # float32
+                key = struct.unpack_from("<I", buf, o)[0]
+                o += 4
+                out[pool[key]] = struct.unpack_from("<f", buf, o)[0]
+                o += 4
+            elif tag == 0x06:  # color(3)
+                key = struct.unpack_from("<I", buf, o)[0]
+                o += 4
+                out[pool[key]] = tuple(buf[o : o + 3])
+                o += 3
+            elif tag == 0x07:  # uint64
+                key = struct.unpack_from("<I", buf, o)[0]
+                o += 4
+                out[pool[key]] = struct.unpack_from("<Q", buf, o)[0]
+                o += 8
+            elif tag == 0x0A:  # int64
+                key = struct.unpack_from("<I", buf, o)[0]
+                o += 4
+                out[pool[key]] = struct.unpack_from("<q", buf, o)[0]
+                o += 8
+            else:
+                return out, o
+        return out, o
+
+    names: dict[str, str] = {}
+    o = 16
+    total = len(data)
+    header_len = 4 + 4 + 8 + 20 + 4 + 20  # 条目内固定头部（62 之后才是 VDF）
+    while o + 8 <= total:
+        appid, size = struct.unpack_from("<II", data, o)
+        if appid == 0:
+            break
+        end = o + 8 + size
+        if end > total or size < header_len:
+            break
+        body = data[o + 8 + header_len : end]
+        try:
+            kv, _ = read_vdf(body, 0)
+            name = kv.get("appinfo", {}).get("common", {}).get("name")
+            if isinstance(name, str) and name:
+                names[str(appid)] = name
+        except (struct.error, ValueError, IndexError):
+            pass
+        o = end
+    return names
+
+
+# ---------------------------------------------------------------------------
 # 游戏名解析
 # ---------------------------------------------------------------------------
 @dataclass
@@ -172,6 +287,11 @@ class NameResolver:
 
     def load(self, steam_root: Path | None = None) -> "NameResolver":
         roots = [steam_root] if steam_root else find_steam_roots()
+        # 先用 appinfo.vdf 垫底（能补齐「装过又卸载」的 Steam 游戏名），
+        # 后面的 shortcuts / appmanifest 会覆盖它（更权威）。
+        for root in roots:
+            for appid, name in _parse_appinfo(root / "appcache" / "appinfo.vdf").items():
+                self.by_appid.setdefault(str(appid), name)
         for root in roots:
             self._load_shortcuts(root)
             for steamapps in find_steamapps_dirs(root):
