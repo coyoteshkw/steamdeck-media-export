@@ -111,11 +111,16 @@ async function init() {
   await loadRecordings();
   const initial = new URLSearchParams(location.search);
   if (initial.get("view") === "screenshots") {
-    if (initial.get("mode") === "games") {
+    const gameid = initial.get("game");
+    if (initial.get("mode") === "games" || gameid) {
       state.shotMode = "games";
       for (const tab of document.querySelectorAll("#shot-modes .tab")) {
         tab.classList.toggle("active", tab.dataset.mode === "games");
       }
+    }
+    if (gameid) {
+      state.shotGame = gameid;
+      state.shotGameName = initial.get("name") || gameid;
     }
     switchView("screenshots");
   }
@@ -1095,6 +1100,25 @@ async function revealOutput() {
 // ---------------------------------------------------------------------------
 // 截图视图
 // ---------------------------------------------------------------------------
+// 把当前视图 / 分类 / 打开的游戏写进 URL，刷新后能恢复（保留 token）
+function syncUrl() {
+  const params = new URLSearchParams();
+  if (TOKEN) params.set("token", TOKEN);
+  if (state.view === "screenshots") {
+    params.set("view", "screenshots");
+    if (state.shotGame) {
+      params.set("game", state.shotGame);
+      if (state.shotGameName) params.set("name", state.shotGameName);
+      // 游戏详情只可能从「按分类」进入；带上 mode，刷新后「返回」才能回到分类页
+      params.set("mode", "games");
+    } else if (state.shotMode === "games") {
+      params.set("mode", "games");
+    }
+  }
+  const query = params.toString();
+  history.replaceState(null, "", query ? `${location.pathname}?${query}` : location.pathname);
+}
+
 function switchView(view) {
   state.view = view;
   closeDrawer();
@@ -1104,6 +1128,7 @@ function switchView(view) {
   el("view-recordings").hidden = view !== "recordings";
   el("view-screenshots").hidden = view !== "screenshots";
   updateSelbar();
+  syncUrl();
   if (view === "screenshots" && !state.shotLoaded) {
     state.shotLoaded = true;
     loadScreenshots();
@@ -1164,6 +1189,7 @@ function switchShotMode(mode) {
   for (const tab of document.querySelectorAll("#shot-modes .tab")) {
     tab.classList.toggle("active", tab.dataset.mode === mode);
   }
+  syncUrl();
   loadScreenshots();
 }
 
@@ -1286,6 +1312,7 @@ async function openShotGame(gameid, name) {
   el("shot-title").textContent = name;
   el("shot-download-page").hidden = false;
   el("shot-select-toggle").hidden = false;
+  syncUrl();
   await loadShotItems();
   window.scrollTo({ top: 0 });
 }
@@ -1294,6 +1321,7 @@ async function showShotGames() {
   state.shotGame = null;
   state.shotGameName = "";
   setShotSelectMode(false);
+  syncUrl();
   await loadScreenshots();
 }
 

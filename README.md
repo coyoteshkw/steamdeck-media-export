@@ -441,6 +441,12 @@ bin/steamexport   # 便捷启动脚本
 
 ## 更新日志
 
+### 0.4.9（2026-10-16）
+
+- **刷新后停留在当前页面**：视图（录像 / 截图）、截图模式（全部 / 按分类）、以及
+  当前打开的游戏分类都会写进 URL（`?view=screenshots`、`?view=screenshots&mode=games`、
+  `?view=screenshots&game=<gameid>&name=<游戏名>`），刷新后自动恢复；`token` 会保留。
+
 ### 0.4.8（2026-10-16）
 
 - **截图「按分类」：没有封面的游戏自动用第一张截图的缩略图兜底**。非 Steam 应用、
