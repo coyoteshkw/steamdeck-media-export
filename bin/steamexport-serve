@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# 桌面模式一键启动：起服务（默认 0.0.0.0 + token hello）并自动打开浏览器。
+#
+# 用法：
+#   ./bin/steamexport-serve                    # 默认 0.0.0.0:8787，token=hello
+#   ./bin/steamexport-serve --no-open          # 不起浏览器
+#   STEAMEXPORT_PORT=9000 ./bin/steamexport-serve
+#   STEAMEXPORT_TOKEN=mysecret ./bin/steamexport-serve
+#
+# 额外参数会原样传给 serve（例如 --port / --no-open / --user）。
+set -euo pipefail
+
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+HOST="${STEAMEXPORT_HOST:-0.0.0.0}"
+PORT="${STEAMEXPORT_PORT:-8787}"
+TOKEN="${STEAMEXPORT_TOKEN:-hello}"
+
+ARGS=(serve --host "$HOST" --port "$PORT" --token "$TOKEN")
+if [ -n "${STEAMEXPORT_OUT:-}" ]; then
+  ARGS+=(--out "$STEAMEXPORT_OUT")
+fi
+
+exec "$DIR/bin/steamexport" "${ARGS[@]}" "$@"

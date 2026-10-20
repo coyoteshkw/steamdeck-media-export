@@ -135,6 +135,24 @@ No extra dependencies — Python standard library only:
 The top bar switches between **Recordings** and **Screenshots**. The current view, screenshot
 mode and opened game are stored in the URL, so refreshing keeps you where you were.
 
+### Desktop shortcut
+
+For desktop mode there is a one-click launcher:
+
+```bash
+./bin/steamexport-serve                 # start on 0.0.0.0 with token hello and open the browser
+./bin/install-desktop-shortcut.sh       # create a double-click shortcut on the Desktop
+```
+
+Defaults (override with environment variables or extra arguments):
+
+| Variable | Default |
+|---|---|
+| `STEAMEXPORT_HOST` | `0.0.0.0` |
+| `STEAMEXPORT_PORT` | `8787` |
+| `STEAMEXPORT_TOKEN` | `hello` |
+| `STEAMEXPORT_OUT` | (unset) |
+
 ### Recordings
 
 - **Grouped by game**: each row shows the Steam icon and expands into clips / background /
@@ -483,7 +501,7 @@ decky/             # Decky Loader plugin (thin / self-contained)
 docs/format.md     # Steam recording storage format
 docs/CHANGELOG.md  # full changelog
 tests/             # unit tests
-bin/steamexport    # convenience launcher
+bin/               # steamexport, steamexport-serve, install-desktop-shortcut.sh
 ```
 
 See [`docs/format.md`](docs/format.md) for details.
@@ -655,6 +673,24 @@ MIT
 
 顶栏可在 **录像 / 截图** 两个视图间切换；视图、截图模式、打开的游戏都会写进 URL，
 刷新后停留在原处。
+
+### 桌面快捷方式
+
+桌面模式提供一键启动脚本：
+
+```bash
+./bin/steamexport-serve                 # 以 0.0.0.0 + token hello 启动并打开浏览器
+./bin/install-desktop-shortcut.sh       # 在桌面创建可双击的快捷方式
+```
+
+可用环境变量覆盖默认值（额外参数会原样传给 `serve`）：
+
+| 变量 | 默认 |
+|---|---|
+| `STEAMEXPORT_HOST` | `0.0.0.0` |
+| `STEAMEXPORT_PORT` | `8787` |
+| `STEAMEXPORT_TOKEN` | `hello` |
+| `STEAMEXPORT_OUT` | （未设置） |
 
 ### 录制管理
 
@@ -992,7 +1028,7 @@ decky/             # Decky Loader 插件（薄壳 / 自包含）
 docs/format.md     # Steam 录制存储格式说明
 docs/CHANGELOG.md  # 完整更新日志
 tests/             # 单元测试
-bin/steamexport    # 便捷启动脚本
+bin/               # steamexport、steamexport-serve、install-desktop-shortcut.sh
 ```
 
 详见 [`docs/format.md`](docs/format.md)。
