@@ -97,6 +97,16 @@ It lists ffmpeg, the Steam folder, recordings per account and the available enco
 
 > To avoid accidents, `export` **requires** a scope (`--all` / `--game` / `--type` / `--since` / IDs).
 
+### Install the Decky plugin
+
+1. Download the Decky plugin ZIP from this project's
+   [Releases](https://github.com/coyoteshkw/steamdeck-media-export/releases) page.
+2. On the Steam Deck, open **Decky settings → Developer → Install from ZIP**, then select the
+   downloaded ZIP.
+
+After installation, you can start / stop the service and open the web UI from the Game Mode
+quick access menu.
+
 ---
 
 ## Languages
@@ -610,6 +620,14 @@ MIT
 ```
 
 > 为防止误操作，`export` **必须**指定范围（`--all` / `--game` / `--type` / `--since` / ID）。
+
+### 安装 Decky 插件
+
+1. 在本项目的 [Releases](https://github.com/coyoteshkw/steamdeck-media-export/releases)
+   页面下载 Decky 插件 ZIP。
+2. 在 Steam Deck 上打开 **Decky 设置 → 开发者 → 从 ZIP 安装**，选择刚下载的 ZIP 即可。
+
+安装后可在游戏模式的快捷菜单里一键启动 / 停止服务，或打开网页管理界面。
 
 ---
 
