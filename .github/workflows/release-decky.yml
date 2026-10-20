@@ -1,0 +1,45 @@
+name: Release Decky plugin
+
+# 推送 v* 或 decky-v* 标签时，自动构建并生成带插件 ZIP 的 GitHub Release。
+# 例：git tag v0.4.14 && git push origin v0.4.14
+on:
+  push:
+    tags:
+      - "v*"
+      - "decky-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: decky/package-lock.json
+
+      - name: Install dependencies
+        working-directory: decky
+        run: npm ci --legacy-peer-deps --no-audit --no-fund
+
+      - name: Build & package
+        working-directory: decky
+        run: |
+          chmod +x package.sh
+          ./package.sh
+          ./package.sh --self-contained
+
+      - name: Create / update release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            decky/SteamMediaExport-*.zip
+          generate_release_notes: true
+          fail_on_unmatched_files: true

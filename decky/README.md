@@ -141,6 +141,29 @@ npm run build          # 产出 dist/index.js
 
 > ⚠️ 两种模式都要求目标机器有 `python3` 和 `ffmpeg`（SteamOS 自带）。
 
+## 发布到 GitHub Release
+
+仓库自带 `.github/workflows/release-decky.yml`：推送 `v*` 或 `decky-v*` 标签后，
+GitHub Actions 会自动构建并把两个 ZIP 附加到对应的 Release：
+
+```bash
+git tag v0.4.14
+git push origin v0.4.14
+```
+
+Release 里会出现：
+
+- `SteamMediaExport-v0.1.5.zip`（薄壳）
+- `SteamMediaExport-v0.1.5-selfcontained.zip`（自包含）
+
+别人在 Releases 页下载自包含 ZIP 后，用 Decky 设置 → 开发者 → 从 ZIP 安装即可。
+
+> ZIP 名用 `decky/package.json` 的插件版本；标签建议用主程序版本。
+> 只想发插件版本时也可以打 `decky-v0.1.5`。
+
+不想用 Actions 的话，也可以本地 `./package.sh --self-contained` 后，
+在 GitHub 网页上创建 Release 并手动上传 ZIP。
+
 ## 可调设置
 
 设置存在 `~/homebrew/settings/SteamMediaExport/settings.json`（由 Decky 的 `SettingsManager` 管理）：
