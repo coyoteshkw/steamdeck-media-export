@@ -53,6 +53,11 @@
     // 下载 / 缓存
     "下载到本机": "Download to this device",
     "下载画质": "Download quality",
+    "原画无损（最快、体积大）": "Original (fastest, large)",
+    "快速压缩（veryfast）": "Fast (veryfast)",
+    "均衡压缩（medium）": "Balanced (medium)",
+    "小体积（720p / CRF26）": "Small (720p / CRF26)",
+    "硬件压缩（VAAPI、低 CPU）": "Hardware (VAAPI, low CPU)",
     "点列表每行右侧的下载按钮，直接下到本机；": "Use the download button on each row to save to this device;",
     "不会在 Deck 上保存": "Not saved on the Deck",
     "下载": "Download",
@@ -181,6 +186,7 @@
 
   // 带插值的句子：正则 → 字符串或函数
   const REWRITES = [
+    [/^未知应用 (\d+)$/, "Unknown app $1"],
     [
       /^(\d+) 个账号 · 版本 (.+?)( · 支持硬件编码)?$/,
       (m) => `${m[1]} accounts · version ${m[2]}` + (m[3] ? " · hardware encoding" : ""),

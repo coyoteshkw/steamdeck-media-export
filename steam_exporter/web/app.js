@@ -652,11 +652,20 @@ function triggerFileDownload(key) {
 }
 
 function updateCacheInfo(cache, preview) {
+  const pick = (zh, en) => (window.I18N ? window.I18N.pick(zh, en) : zh);
   const node = el("cache-info");
   const parts = [];
-  if (cache) parts.push(`下载 ${cache.count}项/${fmtSize(cache.bytes)}`);
-  if (preview) parts.push(`预览 ${preview.count}项/${fmtSize(preview.bytes)}`);
-  node.textContent = parts.length ? "缓存：" + parts.join("，") : "缓存：未启用";
+  if (cache) {
+    parts.push(
+      `${pick("下载", "Download")} ${cache.count}${pick("项", " items")}/${fmtSize(cache.bytes)}`);
+  }
+  if (preview) {
+    parts.push(
+      `${pick("预览", "Preview")} ${preview.count}${pick("项", " items")}/${fmtSize(preview.bytes)}`);
+  }
+  node.textContent = parts.length
+    ? `${pick("缓存：", "Cache: ")}${parts.join(pick("，", ", "))}`
+    : pick("缓存：未启用", "Cache: disabled");
 }
 
 async function clearCache() {

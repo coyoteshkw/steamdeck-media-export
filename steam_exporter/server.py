@@ -1703,39 +1703,63 @@ def serve(
         return 1
 
     query = f"?token={token}" if token else ""
-    print("Steam 媒体导出 · 网页管理界面")
-    print("Steam Media Export · Web UI")
-    print()
-    if host in ("0.0.0.0", "::", ""):
-        ips = _local_ips()
-        if ips:
-            print("  局域网地址（手机 / 平板 / 另一台电脑都可访问）")
-            print("  LAN addresses (phone / tablet / another PC):")
-            for ip in ips:
-                print(f"    http://{ip}:{port}/{query}")
+    ips = _local_ips() if host in ("0.0.0.0", "::", "") else []
+
+    def print_banner(lang: str) -> None:
+        """打印一整段启动信息（en / zh 各一段，不穿插）。"""
+        en = lang == "en"
+        print("Steam Media Export · Web UI" if en else "Steam 媒体导出 · 网页管理界面")
+        if host in ("0.0.0.0", "::", ""):
+            if ips:
+                print(
+                    "  LAN addresses (phone / tablet / another PC):"
+                    if en
+                    else "  局域网地址（手机 / 平板 / 另一台电脑都可访问）："
+                )
+                for ip in ips:
+                    print(f"    http://{ip}:{port}/{query}")
+            else:
+                print(
+                    f"  Listening on {host}:{port} (no LAN IP detected)"
+                    if en
+                    else f"  正在监听 {host}:{port}（未探测到局域网 IP）"
+                )
         else:
-            print(f"  正在监听 {host}:{port}（未探测到局域网 IP）")
-            print(f"  Listening on {host}:{port} (no LAN IP detected)")
-    else:
-        print(f"  地址 / URL：http://{host}:{port}/{query}")
-    print()
-    print(f"  输出：{default_out}")
-    print(f"  Output: {default_out}")
-    print(f"  下载缓存：{cache_root}（TTL {int(cache_ttl/60)} 分钟，上限 {cache_max//1024**3}GB）")
-    print(f"  Download cache: {cache_root} (TTL {int(cache_ttl/60)} min, max {cache_max//1024**3}GB)")
-    print(f"  回收站：{trash_root}")
-    print(f"  Trash: {trash_root}")
-    print(f"  预览缓存：{preview_root}（TTL {int(preview_ttl/86400)} 天，上限 {preview_max//1024**2}MB）")
-    print(f"  Preview cache: {preview_root} (TTL {int(preview_ttl/86400)} days, max {preview_max//1024**2}MB)")
-    if host not in ("127.0.0.1", "localhost"):
-        if token:
-            print("  已启用访问令牌，访问时需带 ?token=…")
-            print("  Access token enabled; add ?token=… to the URL.")
-        else:
-            print("  ⚠ 监听了非本机地址但未设 --token，局域网内任何人都能操作，强烈建议加 --token")
-            print("  ⚠ Listening on a non-local address without --token; anyone on the LAN can control it. Please add --token.")
-    print("  按 Ctrl+C 停止 / Press Ctrl+C to stop")
-    print()
+            print(
+                f"  URL: http://{host}:{port}/{query}"
+                if en
+                else f"  地址：http://{host}:{port}/{query}"
+            )
+        print(f"  Output: {default_out}" if en else f"  输出：{default_out}")
+        print(
+            f"  Download cache: {cache_root} (TTL {int(cache_ttl/60)} min, max {cache_max//1024**3}GB)"
+            if en
+            else f"  下载缓存：{cache_root}（TTL {int(cache_ttl/60)} 分钟，上限 {cache_max//1024**3}GB）"
+        )
+        print(f"  Trash: {trash_root}" if en else f"  回收站：{trash_root}")
+        print(
+            f"  Preview cache: {preview_root} (TTL {int(preview_ttl/86400)} days, max {preview_max//1024**2}MB)"
+            if en
+            else f"  预览缓存：{preview_root}（TTL {int(preview_ttl/86400)} 天，上限 {preview_max//1024**2}MB）"
+        )
+        if host not in ("127.0.0.1", "localhost"):
+            if token:
+                print(
+                    "  Access token enabled; add ?token=… to the URL."
+                    if en
+                    else "  已启用访问令牌，访问时需带 ?token=…"
+                )
+            else:
+                print(
+                    "  ⚠ Listening on a non-local address without --token; anyone on the LAN can control it. Please add --token."
+                    if en
+                    else "  ⚠ 监听了非本机地址但未设 --token，局域网内任何人都能操作，强烈建议加 --token"
+                )
+        print("  Press Ctrl+C to stop" if en else "  按 Ctrl+C 停止")
+        print()
+
+    print_banner("en")
+    print_banner("zh")
 
     if open_browser:
         threading.Thread(target=_open_browser, args=(url,), daemon=True).start()
