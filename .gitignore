@@ -11,3 +11,34 @@ node_modules/
 # 导出产物
 *.mp4
 .steam_exporter_manifest.json
+
+# Python 环境与测试缓存
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# 本地配置（示例文件仍可提交）
+.env
+.env.*
+!.env.example
+
+# 编辑器 / 系统文件
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# 日志与临时文件
+*.log
+npm-debug.log*
+*.tsbuildinfo
+
+# 防止在 decky/ 之外也生成压缩包
+*.zip
