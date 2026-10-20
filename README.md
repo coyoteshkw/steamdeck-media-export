@@ -1,5 +1,515 @@
 # steam-recording-exporter
 
+**English** | [中文](#中文文档)
+
+A small tool to export **game recordings** (clips / recordings) and **game screenshots**
+from **SteamOS / Steam**, with a built-in web UI for browsing and downloading from a phone,
+tablet or another computer. It can also be installed as a **Decky Loader plugin** to toggle
+the server from the Game Mode quick access menu.
+
+**Features**
+
+- **Lossless export** (`-c copy`, zero quality loss, close to disk-copy speed)
+- **Compressed export** (libx264 / libx265 / SVT-AV1 / VAAPI hardware encoding, adjustable CRF / scale)
+- Filter by game / type / date / ID, with concurrent export and a dedup manifest
+- Automatically merges Steam's segmented background recordings (`xxx_0`, `xxx_1`, …)
+- **Web UI**: list, thumbnails, 5-second previews, in-browser playback, download to this device, delete to trash
+- **Screenshot gallery**: group by game, filter, multi-select and download one by one or as a ZIP
+- **i18n**: web UI in Chinese / English, bilingual terminal banner, Decky panel follows the system language
+- Only **Python standard library + system ffmpeg** — no third-party packages
+
+> Target platform is Steam Deck / SteamOS; it also works on any Linux with Steam + ffmpeg.
+
+![Recordings page — English, MacBook Air M1](docs/images/recordings-mac-en.png)
+
+## Contents
+
+- [Quick start](#quick-start)
+- [Languages](#languages)
+- [Web UI](#web-ui)
+- [Decky plugin](#decky-plugin)
+- [CLI reference](#cli-reference)
+- [Long recordings](#long-recordings)
+- [Notes](#notes)
+- [Development](#development)
+- [Roadmap](#roadmap)
+- [Changelog](#changelog)
+- [License](#license)
+
+---
+
+## Quick start
+
+### Requirements
+
+- Python ≥ 3.10
+- `ffmpeg` (bundled with SteamOS; on other systems `sudo apt install ffmpeg`)
+
+Check the environment first:
+
+```bash
+./bin/steamexport doctor
+```
+
+It lists ffmpeg, the Steam folder, recordings per account and the available encoders.
+
+### Browse recordings
+
+```bash
+./bin/steamexport users                 # accounts and recording counts
+./bin/steamexport list                  # list (primary account by default)
+./bin/steamexport list --type clip      # clips only
+./bin/steamexport list --type background
+./bin/steamexport list --game "Outer Wilds"
+./bin/steamexport list --since 2026-09-01 --until 2026-09-30
+./bin/steamexport list --json           # machine-readable
+```
+
+### Export
+
+```bash
+# Lossless, export all clips to ~/Videos/SteamExports
+./bin/steamexport export --type clip --all
+
+# Lossless, export everything for one game (clips + recordings)
+./bin/steamexport export --game "Outer Wilds" --all
+
+# Export to a specific folder
+./bin/steamexport export --all -o /run/media/deck/MyDisk/SteamExports
+
+# Compressed export (smaller, good for publishing)
+./bin/steamexport export --game "Outer Wilds" --type clip --all \
+    --mode compress --codec libx264 --crf 23 --preset veryfast
+
+# Show the plan without writing files
+./bin/steamexport export --all --dry-run
+
+# Concurrent export
+./bin/steamexport export --type clip --all -j 4
+
+# Export in batches (first 50 by time)
+./bin/steamexport export --type clip --all --limit 50
+```
+
+> To avoid accidents, `export` **requires** a scope (`--all` / `--game` / `--type` / `--since` / IDs).
+
+---
+
+## Languages
+
+- **Web UI**: the **EN / 中文** button in the top bar switches languages. The choice is stored
+  in the browser and defaults to the browser language.
+- **Terminal**: the `serve` banner is printed in English first, then in Chinese.
+- **Decky plugin**: the panel follows the system / Steam language.
+
+> Note: date pickers (`<input type="date">`) are native browser controls. Their display format
+> follows the browser / OS language, not the page language.
+
+---
+
+## Web UI
+
+No extra dependencies — Python standard library only:
+
+```bash
+./bin/steamexport serve                                   # start and open the browser
+./bin/steamexport serve --port 9000                       # different port
+./bin/steamexport serve --no-open                         # do not open the browser
+./bin/steamexport serve --host 0.0.0.0 --token mysecret   # LAN / phone access
+```
+
+The top bar switches between **Recordings** and **Screenshots**. The current view, screenshot
+mode and opened game are stored in the URL, so refreshing keeps you where you were.
+
+### Recordings
+
+- **Grouped by game**: each row shows the Steam icon and expands into clips / background /
+  foreground recordings; the checkbox on the left selects the whole group (indeterminate when partial)
+- Two-column layout: export settings and filters on the left, list and progress on the right;
+  it stacks on narrow screens
+- Filters (type / game / date / ID search) and sorting (newest / size / name)
+- Select rows and **Export selected**, or **Export all matches**
+- Lossless / compression, encoder, CRF, concurrency and naming template are editable in the page
+- **Dry run** shows the plan and estimated size without writing files
+- **Live progress** via SSE: overall progress, current item percentage and speed
+- Cancel a running export; partial files are cleaned up
+- **Download to this device**: the download button on each row
+  - Quality presets: original lossless (streaming, instant) / fast / balanced / small (720p) / hardware (VAAPI)
+  - Lossless is **streamed** without touching disk; compressed downloads are encoded to a **temp cache**
+    first, then served as MP4 with `Content-Length` + `Range` (**resumable**)
+  - Cache expires by age (10 minutes) / size (5 GB, LRU) and can be cleared manually
+- **Preview & playback**: thumbnails in the list, a 5-second silent preview on click, and a play
+  button for the **first 5 minutes** (`-c copy` remux, no re-encode, no disk writes)
+- **Open folder** runs `xdg-open` on the Deck
+
+**MacBook Air M1 (1440×900)**
+
+![Recordings — English, MacBook Air M1](docs/images/recordings-mac-en.png)
+
+**Xiaomi 13 (393×873)**
+
+<img src="docs/images/recordings-mi-en.png" width="360" alt="Recordings — English, Xiaomi 13">
+
+### Screenshots
+
+Click **Screenshots** in the top bar (same server, token and LAN URL as recordings):
+
+- **A flat grid of all screenshots** by default (200 per batch, with a **Load more** button)
+- **All / By game** switch: game cards with cover and count, click to open that game's grid
+- Thumbnails reuse Steam's generated `thumbnails/` (~13 KB each), lazy-loaded
+- Click a thumbnail to open the **viewer**; switch with `←` / `→`
+- **Filters**: game keyword / caption, date range, captions only
+- **Download**:
+  - Single / multi-select: download one by one
+  - Multi-select: **ZIP selected** packs the selected screenshots into a ZIP
+  - Sidebar **Download all as ZIP** packs the current filter result
+  - ZIP entries are **flat** `time.jpg` files (originals, no recompression, streamed, no temp files;
+    duplicates get a ` (1)` suffix)
+- **Select all**: available in multi-select mode inside a game (the All view already has the sidebar ZIP)
+- **Delete**: moved to trash by default and restorable (close Steam first if possible)
+
+> Screenshots are discovered from the **filesystem** (`760/remote/<gameid>/screenshots/`);
+> `screenshots.vdf` only adds exact time, size and captions. Steam may write a half-finished vdf
+> while running — the tool tolerates that.
+
+**MacBook Air M1 (1440×900)**
+
+![Screenshots — English, MacBook Air M1](docs/images/screenshots-mac-en.png)
+
+**Xiaomi 13 (393×873)**
+
+<img src="docs/images/screenshots-mi-en.png" width="360" alt="Screenshots — English, Xiaomi 13">
+
+### Delete
+
+- The trash button on each row, or **Delete selected** after selecting rows
+- **Moved to trash by default (restorable)**; tick “delete permanently” in the dialog to skip the trash
+- The sidebar shows trash usage with **Restore all** and **Purge**
+- A warning is shown when Steam is running; closing Steam first is recommended
+- `serve --trash DIR` changes the trash location (default `~/.local/share/steam-exporter/trash`)
+
+### LAN access (phone / tablet / another PC)
+
+```bash
+./bin/steamexport serve --host 0.0.0.0 --token your-secret
+```
+
+The startup banner prints the reachable URL:
+
+```
+  LAN addresses (phone / tablet / another PC):
+    http://192.168.0.103:8787/?token=your-secret
+```
+
+Open it on your phone; the layout switches to a single column automatically. Notes:
+
+- **Always add `--token`**, otherwise anyone on the same network can control it (delete / export)
+- Use it only on a trusted home network and **never expose it to the internet**
+- CPU and disk stay on the Steam Deck; “Open folder” also runs on the Deck
+
+### HTTP API
+
+The backend API can also be used by scripts or the Decky plugin:
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/summary` | Accounts, ffmpeg, encoders, defaults |
+| GET | `/api/recordings` | Recording list (with filters) |
+| POST | `/api/export` | Create an export job (`dry_run` returns the plan) |
+| GET | `/api/jobs/{id}` | Job status snapshot |
+| GET | `/api/jobs/{id}/events` | SSE progress stream |
+| POST | `/api/jobs/{id}/cancel` | Cancel a job |
+| GET | `/api/download` | Lossless download (streamed, no disk writes) |
+| POST | `/api/download/prepare` | Prepare a compressed download (cache hit or new job) |
+| GET | `/api/download/file` | Download a cached file (supports Range) |
+| GET | `/api/thumb/{id}` | Recording thumbnail |
+| GET | `/api/preview/{id}` | 5-second silent preview |
+| GET | `/api/play/{id}` | In-browser playback (first 5 minutes) |
+| POST | `/api/cache/clear` | Clear the download cache |
+| POST | `/api/delete` | Delete recordings (to trash by default) |
+| GET | `/api/trash` | Trash list and usage |
+| POST | `/api/trash/restore` | Restore all |
+| POST | `/api/trash/purge` | Empty the trash |
+| GET | `/api/icon/{appid}` | Game icon (Steam local cache) |
+| GET | `/api/screenshots/summary` | Screenshot overview |
+| GET | `/api/screenshots/games` | Screenshot stats grouped by game |
+| GET | `/api/screenshots/list` | Screenshot list (with filters) |
+| GET | `/api/screenshots/zip` | ZIP (by filter, or `ids=` for specific screenshots) |
+| GET | `/api/screenshot/thumb/{id}` | Screenshot thumbnail |
+| GET | `/api/screenshot/full/{id}` | Original screenshot (`?dl=1` to download) |
+| POST | `/api/screenshots/delete` | Delete screenshots (to trash by default) |
+| POST | `/api/reveal` | Reveal a folder in the file manager |
+
+---
+
+## Decky plugin
+
+After installing the Decky plugin, the Game Mode sidebar gives you:
+
+- A switch to **start / stop** the web server (off by default)
+- The phone URL (preferring `192.168.x.x`) and a **QR code** (already containing `?token=hello`)
+- An editable port (default `8787`, auto-increments when busy)
+- Output / download cache / trash / preview cache paths, plus the actual **code source**
+
+**Usage**: in Game Mode press `...` → Decky icon → **Steam Media Export** → turn on **Enable service** →
+scan the QR code. Full details in [`decky/README.md`](decky/README.md).
+
+The plugin backend only spawns this project's `serve` as a subprocess — **no changes to the
+main program are required**.
+
+### No reinstall needed when the main program changes
+
+In the B2 (thin) setup the plugin runs the code from this repository on every start:
+
+| Changed | Build | Reinstall plugin | How it takes effect |
+|---|---|---|---|
+| `steam_exporter/web/*` (HTML/JS/CSS) | no | no | **refresh the browser** |
+| `steam_exporter/*.py` (backend) | no | no | **restart the service** (toggle the switch) |
+| `decky/src/index.tsx` (panel UI) | yes | yes | `npm run build` → `install.sh` → `reload.sh` |
+| `decky/main.py` / `plugin.json` etc. | no | yes | `install.sh` → `reload.sh` |
+
+`package.sh` is only needed for **distribution**.
+
+### Install / package
+
+```bash
+cd decky
+npm install --legacy-peer-deps && npm run build
+./install.sh                   # thin install into ~/homebrew/plugins/SteamMediaExport
+./install.sh --self-contained  # self-contained install (copies the main program into vendor/)
+./reload.sh                    # safely reload Decky
+
+./package.sh                   # thin ZIP
+./package.sh --self-contained  # self-contained ZIP (for machines without this repo)
+```
+
+| Mode | Contents | Use when |
+|---|---|---|
+| Thin (default) | Plugin only (~48 KB) | The target machine also has this repo |
+| Self-contained | Also bundles `vendor/steam_exporter/` (~130 KB) | **Distributing to others** |
+
+Both ZIPs install via Decky → Settings → Developer → Install from ZIP. The target machine
+needs `python3` and `ffmpeg` (bundled with SteamOS).
+
+---
+
+## CLI reference
+
+### `export` options
+
+| Option | Description |
+|---|---|
+| `--all` | Export everything that matches |
+| `--game keyword` | Filter by game name (repeatable) |
+| `--type clip\|background\|foreground\|recording\|all` | Type filter (`recording` = background + foreground) |
+| `--since / --until YYYY-MM-DD` | Recording date range (local time) |
+| `ids` (positional) | Filter by ID or ID fragment |
+| `--user auto\|all\|SteamID` | Account, default `auto` = primary |
+| `-o, --out DIR` | Output folder, default `~/Videos/SteamExports` |
+| `--mode lossless\|compress` | Lossless (default) or compressed |
+| `--codec` | `libx264` (default) / `libx265` / `libsvtav1` / `h264_vaapi` / `hevc_vaapi` / `av1_vaapi` |
+| `--crf` | Quality, lower is better, default 23 (VAAPI uses `-qp`) |
+| `--preset` | x264/x265 speed preset, default `medium` |
+| `--scale 1280:-2` | Scale during compression |
+| `--audio-bitrate` | Compressed audio bitrate, default `160k` |
+| `--template` | Output naming template (see below) |
+| `--no-faststart` | Do not write faststart (written by default) |
+| `--tmp DIR` | Temporary symlink / merge folder |
+| `--no-trim` | Do not trim the tail to the metadata duration |
+| `--force` | Ignore the manifest and re-export |
+| `--dry-run` | Show the plan only |
+| `-j, --jobs N` | Concurrent exports |
+| `--no-manifest` | Do not write the dedup manifest |
+
+### Naming template
+
+Default: `{game}/{date} {time} - {kind_cn}.mp4`
+Example: `Outer Wilds/2026-09-05 17-22-00 - 剪辑.mp4`
+
+| Variable | Meaning | Example |
+|---|---|---|
+| `{game}` | Game name | `Outer Wilds` |
+| `{appid}` | Steam AppID (normalized for non-Steam) | `753640` |
+| `{gameid}` | Steam internal game id | `753640` |
+| `{date}` | Local date | `2026-09-05` |
+| `{time}` | Local time | `17-22-00` |
+| `{datetime}` | Local date and time | `2026-09-05 17-22-00` |
+| `{kind}` | Type (English) | `clip` / `background` / `foreground` |
+| `{kind_cn}` | Type (Chinese) | `剪辑` / `后台录像` / `录像` |
+| `{id}` | Source ID | `clip_753640_20260905_092200` |
+| `{title}` | Steam record title (if any) | `Outer Wilds - 2026-09-05 17:21:57` |
+| `{duration}` | Duration | `45m00s` |
+| `{user}` | SteamID | `331943233` |
+
+Path separators inside values become `_`; `/` in the template creates subfolders. The result
+can never escape the output folder.
+
+```bash
+--template "{game}/{date}/{time} - {kind_cn}.mp4"
+--template "Steam录制/{date} {time} {game}.mp4"
+```
+
+### Dedup manifest
+
+Each export writes `.steam_exporter_manifest.json` to the output folder, recording exported
+sources. On the next run, existing entries are skipped. Use `--force` to re-export and
+`--no-manifest` to disable it.
+
+### Lossless vs compressed
+
+| | Lossless (`lossless`) | Compressed (`compress`) |
+|---|---|---|
+| How | ffmpeg `-c copy` remux | Re-encode |
+| Quality | Identical to the recording | Depends on `--crf` / `--preset` |
+| Speed | Very fast (≈ disk copy) | CPU / GPU bound |
+| Size | Same as the source (~6.6 Mbps) | 1/5 ~ 1/10 possible |
+| Best for | Archiving | Publishing, sharing, saving space |
+
+```bash
+# Software encoders
+./bin/steamexport export --all --mode compress --codec libx264 --crf 20 --preset slow
+./bin/steamexport export --all --mode compress --codec libx265 --crf 24 --preset medium
+./bin/steamexport export --all --mode compress --codec libsvtav1 --crf 30 --preset 6
+
+# VAAPI hardware encoding (faster and more efficient on Steam Deck)
+./bin/steamexport export --all --mode compress --codec h264_vaapi --crf 24
+```
+
+> With hardware encoding `--crf` is passed as `-qp`; the quality range is not identical to software encoding.
+
+### Output layout
+
+```
+~/Videos/SteamExports/
+├── .steam_exporter_manifest.json     # dedup manifest
+├── Outer Wilds/
+│   ├── 2026-08-22 22-44-15 - 剪辑.mp4
+│   └── 2026-10-04 21-50-16 - 剪辑.mp4
+└── Castle Crashers/
+    └── 2026-10-14 23-51-59 - 后台录像.mp4
+```
+
+### Progress output
+
+A single export (`-j 1`) shows percentage, processed/total duration and speed:
+
+```
+[1/1] 进度  73%  0:33/0:45  1.2x
+```
+
+When redirected to a file it prints one integer percentage per line. With `-j > 1` there is no
+per-item progress, only one line per finished item.
+
+---
+
+## Long recordings
+
+Steam recordings are DASH segments — a 51-minute clip has thousands of them, hitting two
+system limits:
+
+1. **128 KiB per command-line argument** (`MAX_ARG_STRLEN`): joining every segment into one
+   `concat:` argument fails with `Argument list too long`. Fix: use **short-name symlinks**
+   instead of copying data.
+2. **File descriptor limit**: ffmpeg's `concat:` opens all segments at once, and many terminals
+   default the soft limit to 1024 (`Too many open files`). Fix: raise the soft limit to the hard
+   limit at startup; if the hard limit is also low, fall back to merging segments into one temp file.
+
+`--tmp DIR` sets the temp folder (defaults to the output folder to avoid tmpfs).
+
+---
+
+## Notes
+
+1. **Prefer not exporting while recording**: files are being written; stop the game/recording or
+   close Steam first.
+2. **Timestamps**: Steam folder names use **UTC**; the tool converts them to local time.
+3. **Background recordings are a rolling buffer**: Steam keeps only the recent window (~1 hour),
+   older segments are deleted and cannot be recovered; durations for these are estimates.
+4. **File mtime is unreliable**: mtime can be wrong on SteamOS, so the tool always uses the
+   folder name / metadata time.
+5. **Space**: a lossless export is a full copy. Check free space first; use `--dry-run`.
+6. **Game name resolution**: uses `appmanifest_*.acf` for installed games, `shortcuts.vdf` for
+   non-Steam shortcuts, and `appcache/appinfo.vdf` for games that were installed then uninstalled.
+   Anything still unknown shows as `Unknown app <appid>` / `未知应用 <appid>`.
+7. **Multiple accounts**: `--user` handles the primary account (`MostRecent` in `loginusers.vdf`)
+   by default; use `--user all` for every account.
+8. **Corrupted recordings**: some recordings have a 0-byte `init-stream0.m4s`. The tool skips
+   empty files, tries a best-effort header recovery from a recording with the same resolution,
+   and clearly skips the item if recovery fails, without affecting the rest.
+
+---
+
+## Development
+
+```bash
+python3 -m unittest discover -s tests -v          # run tests
+python3 -m steam_exporter --help                  # run as a module
+```
+
+### Project layout
+
+```
+steam_exporter/
+├── cli.py         # CLI entry point, filtering, commands
+├── server.py      # HTTP server + web backend (API / SSE / streaming)
+├── web/           # web frontend (index.html / app.js / style.css / i18n.js, no build step)
+├── library.py     # account selection, scanning, filtering (shared by CLI and web)
+├── scanner.py     # scans gamerecordings, parses folder names and clip.pb
+├── screenshots.py # scans Steam screenshots + screenshots.vdf metadata
+├── steam.py       # Steam discovery, VDF / appinfo parsing, game names
+├── exporter.py    # ffmpeg command building, naming, manifest, concurrency
+├── model.py       # Source data model
+├── pb.py          # minimal protobuf parser
+└── util.py        # formatting, mpd duration, ffmpeg helpers
+decky/             # Decky Loader plugin (thin / self-contained)
+docs/format.md     # Steam recording storage format
+docs/CHANGELOG.md  # full changelog
+tests/             # unit tests
+bin/steamexport    # convenience launcher
+```
+
+See [`docs/format.md`](docs/format.md) for details.
+
+---
+
+## Roadmap
+
+- Optionally export thumbnails and timeline events (screenshots / achievements) alongside recordings
+- Show an ETA in the progress display
+
+---
+
+## Changelog
+
+Recent entries (full history in [`docs/CHANGELOG.md`](docs/CHANGELOG.md)):
+
+### 0.4.14
+
+- Terminal banner prints a full English block, then a full Chinese block (no interleaving).
+- Web i18n gaps fixed: download quality presets, cache stats (`Cache: Download …`),
+  `未知应用` → `Unknown app`.
+
+### 0.4.13
+
+- i18n: web UI EN / 中文 switch, bilingual `serve` banner, Decky panel follows the system
+  language; fixed the mobile top bar overlap in English.
+
+### 0.4.12
+
+- Select all in multi-select mode inside a game (only there; the All view already has the sidebar ZIP).
+
+---
+
+## License
+
+MIT
+
+---
+
+# 中文文档
+
+[English](#steam-recording-exporter) | **中文**
+
 从 **SteamOS / Steam** 导出**游戏录制**（剪辑 / 录像）和**游戏截图**的小工具，自带网页管理界面，
 方便在手机、平板或另一台电脑上浏览、下载。也可以装成 **Decky Loader 插件**，在游戏模式的
 快捷菜单里一键开关。
@@ -12,9 +522,12 @@
 - 自动合并 Steam 分段续写的后台录像（`xxx_0`、`xxx_1` …）
 - **网页端**：列表、缩略图、5 秒预览、在线播放、下载到本机、删除进回收站
 - **截图图库**：按游戏分类、筛选、多选逐张下载或打包成 ZIP
+- **国际化**：网页中英切换、终端双语播报、Decky 面板跟随系统语言
 - 只依赖 **Python 标准库 + 系统 ffmpeg**，无需安装第三方包
 
 > 目标平台是 Steam Deck / SteamOS；任何有 Steam + ffmpeg 的 Linux 都能用。
+
+![录像页 — 中文，MacBook Air M1](docs/images/recordings-mac-zh.png)
 
 ## 目录
 
@@ -92,7 +605,7 @@
 ## 语言
 
 - **网页端**：顶栏的「EN / 中文」按钮切换；选择存在浏览器里，默认跟随浏览器语言。
-- **终端**：`serve` 的启动信息为中英双语。
+- **终端**：`serve` 的启动信息先完整打印英文，再完整打印中文。
 - **Decky 插件**：面板跟随系统 / Steam 语言自动切换。
 
 > 注：日期选择器（`<input type="date">`）是浏览器原生控件，显示格式跟随
@@ -134,6 +647,14 @@
   （`-c copy` remux，不转码、不落盘）
 - 「打开导出目录」在 Deck 上执行 `xdg-open`
 
+**MacBook Air M1（1440×900）**
+
+![录像页 — 中文，MacBook Air M1](docs/images/recordings-mac-zh.png)
+
+**小米 13（393×873）**
+
+<img src="docs/images/recordings-mi-zh.png" width="360" alt="录像页 — 中文，小米 13">
+
 ### 截图图库
 
 点顶栏「截图」进入（与录像共用同一个服务、Token 和局域网地址）：
@@ -153,6 +674,14 @@
 
 > 截图以**文件系统为准**（`760/remote/<gameid>/screenshots/`），`screenshots.vdf`
 > 只用于补充精确时间、尺寸与标题；Steam 运行时 vdf 可能只写一半，工具会容错。
+
+**MacBook Air M1（1440×900）**
+
+![截图页 — 中文，MacBook Air M1](docs/images/screenshots-mac-zh.png)
+
+**小米 13（393×873）**
+
+<img src="docs/images/screenshots-mi-zh.png" width="360" alt="截图页 — 中文，小米 13">
 
 ### 删除录制
 
@@ -418,7 +947,7 @@ python3 -m steam_exporter --help                  # 以模块方式运行
 steam_exporter/
 ├── cli.py         # 命令行入口、过滤与命令实现
 ├── server.py      # HTTP 服务 + 网页后端（API / SSE / 流式下载）
-├── web/           # 网页前端（index.html / app.js / style.css，无构建步骤）
+├── web/           # 网页前端（index.html / app.js / style.css / i18n.js，无构建步骤）
 ├── library.py     # 账号选择、扫描、过滤（CLI 与网页共用）
 ├── scanner.py     # 扫描 gamerecordings，解析目录名与 clip.pb
 ├── screenshots.py # 扫描 Steam 截图 + screenshots.vdf 元数据
@@ -452,25 +981,15 @@ bin/steamexport    # 便捷启动脚本
 ### 0.4.14
 
 - 终端启动信息改为「整段英文 + 整段中文」，不再逐行穿插。
-- 补齐网页英文遗漏：「下载画质」各预设、缓存统计（`Cache: Download …`）、
-  「未知应用」→ `Unknown app`。
+- 补齐网页英文遗漏：「下载画质」各预设、缓存统计、「未知应用」→ `Unknown app`。
 
 ### 0.4.13
 
-- 国际化：网页端顶栏「EN / 中文」切换（默认跟随浏览器语言）、`serve` 启动信息中英双语、
-  Decky 插件跟随系统语言；修正英文界面下手机顶栏重叠。
+- 国际化：网页中英切换、`serve` 双语、Decky 面板跟随系统语言；修正英文手机顶栏重叠。
 
 ### 0.4.12
 
 - 游戏详情多选支持「全选」（仅游戏内，「全部」视图不重复提供）。
-
-### 0.4.11
-
-- 截图 ZIP 改为**平铺**：`时间.jpg`，不再按游戏名建子文件夹。
-
-### 0.4.10
-
-- 多选新增「打包选中」；移除工具栏里与侧栏重复的「打包下载」按钮。
 
 ---
 
