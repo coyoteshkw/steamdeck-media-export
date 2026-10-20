@@ -368,9 +368,10 @@ function renderGroups() {
 
 function metaText(group) {
   const parts = [];
-  if (group.clips) parts.push(`剪辑 ${group.clips}`);
-  if (group.backgrounds) parts.push(`后台 ${group.backgrounds}`);
-  if (group.foregrounds) parts.push(`录像 ${group.foregrounds}`);
+  const pick = (zh, en) => (window.I18N ? window.I18N.pick(zh, en) : zh);
+  if (group.clips) parts.push(`${pick("剪辑", "Clips")} ${group.clips}`);
+  if (group.backgrounds) parts.push(`${pick("后台", "Background")} ${group.backgrounds}`);
+  if (group.foregrounds) parts.push(`${pick("录像", "Foreground")} ${group.foregrounds}`);
   parts.push(fmtSize(group.size));
   return parts.join(" · ");
 }

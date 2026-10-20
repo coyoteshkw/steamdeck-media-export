@@ -1697,31 +1697,44 @@ def serve(
         httpd = _QuietHTTPServer((host, port), Handler)
     except OSError as exc:
         print(f"无法启动服务：{exc}")
+        print(f"Failed to start: {exc}")
         print(f"（端口 {port} 可能被占用，试试 --port 其他端口）")
+        print(f"(Port {port} may be in use; try another --port.)")
         return 1
 
     query = f"?token={token}" if token else ""
     print("Steam 媒体导出 · 网页管理界面")
+    print("Steam Media Export · Web UI")
+    print()
     if host in ("0.0.0.0", "::", ""):
         ips = _local_ips()
         if ips:
-            print("  局域网地址（手机 / 平板 / 另一台电脑都可访问）：")
+            print("  局域网地址（手机 / 平板 / 另一台电脑都可访问）")
+            print("  LAN addresses (phone / tablet / another PC):")
             for ip in ips:
                 print(f"    http://{ip}:{port}/{query}")
         else:
             print(f"  正在监听 {host}:{port}（未探测到局域网 IP）")
+            print(f"  Listening on {host}:{port} (no LAN IP detected)")
     else:
-        print(f"  地址：http://{host}:{port}/{query}")
+        print(f"  地址 / URL：http://{host}:{port}/{query}")
+    print()
     print(f"  输出：{default_out}")
+    print(f"  Output: {default_out}")
     print(f"  下载缓存：{cache_root}（TTL {int(cache_ttl/60)} 分钟，上限 {cache_max//1024**3}GB）")
+    print(f"  Download cache: {cache_root} (TTL {int(cache_ttl/60)} min, max {cache_max//1024**3}GB)")
     print(f"  回收站：{trash_root}")
+    print(f"  Trash: {trash_root}")
     print(f"  预览缓存：{preview_root}（TTL {int(preview_ttl/86400)} 天，上限 {preview_max//1024**2}MB）")
+    print(f"  Preview cache: {preview_root} (TTL {int(preview_ttl/86400)} days, max {preview_max//1024**2}MB)")
     if host not in ("127.0.0.1", "localhost"):
         if token:
             print("  已启用访问令牌，访问时需带 ?token=…")
+            print("  Access token enabled; add ?token=… to the URL.")
         else:
             print("  ⚠ 监听了非本机地址但未设 --token，局域网内任何人都能操作，强烈建议加 --token")
-    print("  按 Ctrl+C 停止")
+            print("  ⚠ Listening on a non-local address without --token; anyone on the LAN can control it. Please add --token.")
+    print("  按 Ctrl+C 停止 / Press Ctrl+C to stop")
     print()
 
     if open_browser:

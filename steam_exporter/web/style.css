@@ -734,6 +734,9 @@ body.job-active .layout { padding-bottom: 100px; }
 @media (max-width: 900px) {
   body { height: auto; overflow: auto; }
 
+  .appbar { flex-wrap: wrap; }
+  .appbar-info { display: none; }
+
   .layout { flex-direction: column; padding: 12px; }
 
   /* 侧栏变成抽屉 */
@@ -822,7 +825,7 @@ body.job-active .layout { padding-bottom: 100px; }
   .appbar { gap: 8px; padding: 8px 10px; min-height: 0; }
   .appbar-info { display: none; }
   #ffmpeg-badge { display: none; }
-  .tabs { flex: 1; min-width: 0; }
+  .tabs { flex: 1 1 100%; min-width: 0; }
   .tabs .tab { flex: 1; padding: 4px 6px; }
   .drawer-toggle { flex: 0 0 auto; }
   .account select { width: 112px; padding: 6px 8px; font-size: 12px; }
