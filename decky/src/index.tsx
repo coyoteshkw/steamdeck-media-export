@@ -28,18 +28,75 @@ interface Status {
   error: string | null;
 }
 
-const HINT_LABELS: Array<[string, string]> = [
-  ["out", "输出目录"],
-  ["cache", "下载缓存"],
-  ["trash", "回收站"],
-  ["preview", "预览缓存"],
-];
+// 跟随系统/Steam 语言（CEF 的 navigator.language）
+const LANG: "zh" | "en" = (navigator.language || "").toLowerCase().startsWith("zh")
+  ? "zh"
+  : "en";
 
-const SOURCE_LABELS: Record<string, string> = {
-  bundled: "内置（自包含）",
-  repo: "本地仓库",
-  custom: "自定义路径",
+const TEXT = {
+  zh: {
+    title: "Steam 媒体导出",
+    enable: "启用服务",
+    running: (ip: string, port: number) => `运行中 · ${ip}:${port}`,
+    stopped: "已停止",
+    notice: "提示",
+    urlLabel: "手机访问地址",
+    urlStopped: "（未启动）",
+    urlPending: "打开开关后显示地址",
+    qrLabel: "扫码打开",
+    qrAlt: "访问二维码",
+    port: "端口",
+    portDesc: "默认 8787，被占用时自动顺延",
+    applyPort: "应用端口并重启",
+    savePort: "保存端口",
+    source: "代码来源",
+    projectDir: "项目目录",
+    notFound: "未找到：",
+    hints: {
+      out: "输出目录",
+      cache: "下载缓存",
+      trash: "回收站",
+      preview: "预览缓存",
+    } as Record<string, string>,
+    sources: {
+      bundled: "内置（自包含）",
+      repo: "本地仓库",
+      custom: "自定义路径",
+    } as Record<string, string>,
+  },
+  en: {
+    title: "Steam Media Export",
+    enable: "Enable service",
+    running: (ip: string, port: number) => `Running · ${ip}:${port}`,
+    stopped: "Stopped",
+    notice: "Notice",
+    urlLabel: "Mobile URL",
+    urlStopped: " (stopped)",
+    urlPending: "Turn on the switch to show the URL",
+    qrLabel: "Scan to open",
+    qrAlt: "QR code",
+    port: "Port",
+    portDesc: "Default 8787; auto-increments if busy",
+    applyPort: "Apply port & restart",
+    savePort: "Save port",
+    source: "Code source",
+    projectDir: "Project folder",
+    notFound: "Not found: ",
+    hints: {
+      out: "Output folder",
+      cache: "Download cache",
+      trash: "Trash",
+      preview: "Preview cache",
+    } as Record<string, string>,
+    sources: {
+      bundled: "Bundled (self-contained)",
+      repo: "Local repo",
+      custom: "Custom path",
+    } as Record<string, string>,
+  },
 };
+const L = TEXT[LANG];
+const HINT_KEYS = ["out", "cache", "trash", "preview"];
 
 const small: CSSProperties = {
   fontSize: "11px",
@@ -64,7 +121,7 @@ function Content() {
   const portDirty = useRef(false);
 
   const refresh = async () => {
-    const next = await call<[], Status>("get_status");
+    const next = await call<[string], Status>("get_status", LANG);
     setStatus(next);
     if (!portDirty.current) {
       setPortInput(String(next.configured_port ?? next.port));
@@ -105,9 +162,10 @@ function Content() {
     setBusy(true);
     try {
       if (checked) {
-        await call<[number], Status>("start_server", Number(portInput) || 8787);
+        await call<[number, string], Status>(
+          "start_server", Number(portInput) || 8787, LANG);
       } else {
-        await call<[], Status>("stop_server");
+        await call<[string], Status>("stop_server", LANG);
       }
       portDirty.current = false;
       await refresh();
@@ -119,7 +177,7 @@ function Content() {
   const applyPort = async () => {
     setBusy(true);
     try {
-      await call<[number], Status>("set_port", Number(portInput) || 8787);
+      await call<[number, string], Status>("set_port", Number(portInput) || 8787, LANG);
       portDirty.current = false;
       await refresh();
     } finally {
@@ -130,11 +188,13 @@ function Content() {
   const portChanged = status ? Number(portInput) !== status.configured_port : false;
 
   return (
-    <PanelSection title="Steam 媒体导出" spinner={busy}>
+    <PanelSection title={L.title} spinner={busy}>
       <PanelSectionRow>
         <ToggleField
-          label="启用服务"
-          description={running ? `运行中 · ${status?.ip}:${status?.port}` : "已停止"}
+          label={L.enable}
+          description={
+            running ? L.running(status?.ip || "", status?.port || 0) : L.stopped
+          }
           checked={running}
           disabled={busy || status?.project_ok === false}
           onChange={onToggle}
@@ -143,29 +203,29 @@ function Content() {
 
       {status?.error ? (
         <PanelSectionRow>
-          <Field label="提示" bottomSeparator="none" childrenLayout="below">
+          <Field label={L.notice} bottomSeparator="none" childrenLayout="below">
             <div style={{ ...small, color: "#ff9a9a" }}>{status.error}</div>
           </Field>
         </PanelSectionRow>
       ) : null}
 
       <PanelSectionRow>
-        <Field label="手机访问地址" bottomSeparator="none" childrenLayout="below">
+        <Field label={L.urlLabel} bottomSeparator="none" childrenLayout="below">
           <div style={{ ...small, opacity: running ? 0.9 : 0.5 }}>
             {status?.url
-              ? `${status.url}${running ? "" : "（未启动）"}`
-              : "打开开关后显示地址"}
+              ? `${status.url}${running ? "" : L.urlStopped}`
+              : L.urlPending}
           </div>
         </Field>
       </PanelSectionRow>
 
       {running && qrDataUrl ? (
         <PanelSectionRow>
-          <Field label="扫码打开" bottomSeparator="none" childrenLayout="below">
+          <Field label={L.qrLabel} bottomSeparator="none" childrenLayout="below">
             <div style={{ display: "flex", justifyContent: "center", width: "100%" }}>
               <img
                 src={qrDataUrl}
-                alt="访问二维码"
+                alt={L.qrAlt}
                 width={170}
                 height={170}
                 style={{
@@ -182,11 +242,11 @@ function Content() {
 
       <PanelSectionRow>
         <TextField
-          label="端口"
+          label={L.port}
           value={portInput}
           mustBeNumeric
           disabled={busy}
-          description="默认 8787，被占用时自动顺延"
+          description={L.portDesc}
           onChange={(e) => {
             portDirty.current = true;
             setPortInput(e.target.value);
@@ -196,14 +256,14 @@ function Content() {
 
       <PanelSectionRow>
         <ButtonItem layout="below" disabled={busy || !portChanged} onClick={applyPort}>
-          {running ? "应用端口并重启" : "保存端口"}
+          {running ? L.applyPort : L.savePort}
         </ButtonItem>
       </PanelSectionRow>
 
-      {HINT_LABELS.map(([key, label]) =>
+      {HINT_KEYS.map((key) =>
         status?.hints?.[key] ? (
           <PanelSectionRow key={key}>
-            <Field label={label} bottomSeparator="none" childrenLayout="below">
+            <Field label={L.hints[key]} bottomSeparator="none" childrenLayout="below">
               <div style={small}>{status.hints[key]}</div>
             </Field>
           </PanelSectionRow>
@@ -211,17 +271,20 @@ function Content() {
       )}
 
       <PanelSectionRow>
-        <Field label="代码来源" bottomSeparator="none" childrenLayout="below">
+        <Field label={L.source} bottomSeparator="none" childrenLayout="below">
           <div style={small}>
-            {SOURCE_LABELS[status?.source ?? ""] ?? "—"}　{status?.project_dir}
+            {L.sources[status?.source ?? ""] ?? "—"}　{status?.project_dir}
           </div>
         </Field>
       </PanelSectionRow>
 
       {status?.project_ok === false ? (
         <PanelSectionRow>
-          <Field label="项目目录" bottomSeparator="none" childrenLayout="below">
-            <div style={{ ...small, color: "#ff9a9a" }}>未找到：{status.project_dir}</div>
+          <Field label={L.projectDir} bottomSeparator="none" childrenLayout="below">
+            <div style={{ ...small, color: "#ff9a9a" }}>
+              {L.notFound}
+              {status.project_dir}
+            </div>
           </Field>
         </PanelSectionRow>
       ) : null}
@@ -231,7 +294,7 @@ function Content() {
 
 export default definePlugin(() => ({
   name: "SteamMediaExport",
-  title: <div className={staticClasses.Title}>Steam 媒体导出</div>,
+  title: <div className={staticClasses.Title}>{L.title}</div>,
   content: <Content />,
   icon: <QrIcon />,
   onDismount() {},

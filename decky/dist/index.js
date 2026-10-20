@@ -2249,17 +2249,74 @@ const createDataURL = function(width, height, getPixel) {
   return 'data:image/gif;base64,' + base64;
 };
 
-const HINT_LABELS = [
-    ["out", "输出目录"],
-    ["cache", "下载缓存"],
-    ["trash", "回收站"],
-    ["preview", "预览缓存"],
-];
-const SOURCE_LABELS = {
-    bundled: "内置（自包含）",
-    repo: "本地仓库",
-    custom: "自定义路径",
+// 跟随系统/Steam 语言（CEF 的 navigator.language）
+const LANG = (navigator.language || "").toLowerCase().startsWith("zh")
+    ? "zh"
+    : "en";
+const TEXT = {
+    zh: {
+        title: "Steam 媒体导出",
+        enable: "启用服务",
+        running: (ip, port) => `运行中 · ${ip}:${port}`,
+        stopped: "已停止",
+        notice: "提示",
+        urlLabel: "手机访问地址",
+        urlStopped: "（未启动）",
+        urlPending: "打开开关后显示地址",
+        qrLabel: "扫码打开",
+        qrAlt: "访问二维码",
+        port: "端口",
+        portDesc: "默认 8787，被占用时自动顺延",
+        applyPort: "应用端口并重启",
+        savePort: "保存端口",
+        source: "代码来源",
+        projectDir: "项目目录",
+        notFound: "未找到：",
+        hints: {
+            out: "输出目录",
+            cache: "下载缓存",
+            trash: "回收站",
+            preview: "预览缓存",
+        },
+        sources: {
+            bundled: "内置（自包含）",
+            repo: "本地仓库",
+            custom: "自定义路径",
+        },
+    },
+    en: {
+        title: "Steam Media Export",
+        enable: "Enable service",
+        running: (ip, port) => `Running · ${ip}:${port}`,
+        stopped: "Stopped",
+        notice: "Notice",
+        urlLabel: "Mobile URL",
+        urlStopped: " (stopped)",
+        urlPending: "Turn on the switch to show the URL",
+        qrLabel: "Scan to open",
+        qrAlt: "QR code",
+        port: "Port",
+        portDesc: "Default 8787; auto-increments if busy",
+        applyPort: "Apply port & restart",
+        savePort: "Save port",
+        source: "Code source",
+        projectDir: "Project folder",
+        notFound: "Not found: ",
+        hints: {
+            out: "Output folder",
+            cache: "Download cache",
+            trash: "Trash",
+            preview: "Preview cache",
+        },
+        sources: {
+            bundled: "Bundled (self-contained)",
+            repo: "Local repo",
+            custom: "Custom path",
+        },
+    },
 };
+const L = TEXT[LANG];
+const HINT_KEYS = ["out", "cache", "trash", "preview"];
 const small = {
     fontSize: "11px",
     lineHeight: 1.4,
@@ -2276,7 +2333,7 @@ function Content() {
     // 用户正在改端口时，别被轮询结果覆盖
     const portDirty = SP_REACT.useRef(false);
     const refresh = async () => {
-        const next = await call("get_status");
+        const next = await call("get_status", LANG);
         setStatus(next);
         if (!portDirty.current) {
             setPortInput(String(next.configured_port ?? next.port));
@@ -2315,10 +2372,10 @@ function Content() {
         setBusy(true);
         try {
             if (checked) {
-                await call("start_server", Number(portInput) || 8787);
+                await call("start_server", Number(portInput) || 8787, LANG);
             }
             else {
-                await call("stop_server");
+                await call("stop_server", LANG);
             }
             portDirty.current = false;
             await refresh();
@@ -2330,7 +2387,7 @@ function Content() {
     const applyPort = async () => {
         setBusy(true);
         try {
-            await call("set_port", Number(portInput) || 8787);
+            await call("set_port", Number(portInput) || 8787, LANG);
             portDirty.current = false;
             await refresh();
         }
@@ -2339,21 +2396,21 @@ function Content() {
         }
     };
     const portChanged = status ? Number(portInput) !== status.configured_port : false;
-    return (SP_JSX.jsxs(DFL.PanelSection, { title: "Steam \u5A92\u4F53\u5BFC\u51FA", spinner: busy, children: [SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ToggleField, { label: "\u542F\u7528\u670D\u52A1", description: running ? `运行中 · ${status?.ip}:${status?.port}` : "已停止", checked: running, disabled: busy || status?.project_ok === false, onChange: onToggle }) }), status?.error ? (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.Field, { label: "\u63D0\u793A", bottomSeparator: "none", childrenLayout: "below", children: SP_JSX.jsx("div", { style: { ...small, color: "#ff9a9a" }, children: status.error }) }) })) : null, SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.Field, { label: "\u624B\u673A\u8BBF\u95EE\u5730\u5740", bottomSeparator: "none", childrenLayout: "below", children: SP_JSX.jsx("div", { style: { ...small, opacity: running ? 0.9 : 0.5 }, children: status?.url
-                            ? `${status.url}${running ? "" : "（未启动）"}`
-                            : "打开开关后显示地址" }) }) }), running && qrDataUrl ? (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.Field, { label: "\u626B\u7801\u6253\u5F00", bottomSeparator: "none", childrenLayout: "below", children: SP_JSX.jsx("div", { style: { display: "flex", justifyContent: "center", width: "100%" }, children: SP_JSX.jsx("img", { src: qrDataUrl, alt: "\u8BBF\u95EE\u4E8C\u7EF4\u7801", width: 170, height: 170, style: {
+    return (SP_JSX.jsxs(DFL.PanelSection, { title: L.title, spinner: busy, children: [SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ToggleField, { label: L.enable, description: running ? L.running(status?.ip || "", status?.port || 0) : L.stopped, checked: running, disabled: busy || status?.project_ok === false, onChange: onToggle }) }), status?.error ? (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.Field, { label: L.notice, bottomSeparator: "none", childrenLayout: "below", children: SP_JSX.jsx("div", { style: { ...small, color: "#ff9a9a" }, children: status.error }) }) })) : null, SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.Field, { label: L.urlLabel, bottomSeparator: "none", childrenLayout: "below", children: SP_JSX.jsx("div", { style: { ...small, opacity: running ? 0.9 : 0.5 }, children: status?.url
+                            ? `${status.url}${running ? "" : L.urlStopped}`
+                            : L.urlPending }) }) }), running && qrDataUrl ? (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.Field, { label: L.qrLabel, bottomSeparator: "none", childrenLayout: "below", children: SP_JSX.jsx("div", { style: { display: "flex", justifyContent: "center", width: "100%" }, children: SP_JSX.jsx("img", { src: qrDataUrl, alt: L.qrAlt, width: 170, height: 170, style: {
                                 background: "#fff",
                                 padding: "6px",
                                 borderRadius: "6px",
                                 imageRendering: "pixelated",
-                            } }) }) }) })) : null, SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.TextField, { label: "\u7AEF\u53E3", value: portInput, mustBeNumeric: true, disabled: busy, description: "\u9ED8\u8BA4 8787\uFF0C\u88AB\u5360\u7528\u65F6\u81EA\u52A8\u987A\u5EF6", onChange: (e) => {
+                            } }) }) }) })) : null, SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.TextField, { label: L.port, value: portInput, mustBeNumeric: true, disabled: busy, description: L.portDesc, onChange: (e) => {
                         portDirty.current = true;
                         setPortInput(e.target.value);
-                    } }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: busy || !portChanged, onClick: applyPort, children: running ? "应用端口并重启" : "保存端口" }) }), HINT_LABELS.map(([key, label]) => status?.hints?.[key] ? (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.Field, { label: label, bottomSeparator: "none", childrenLayout: "below", children: SP_JSX.jsx("div", { style: small, children: status.hints[key] }) }) }, key)) : null), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.Field, { label: "\u4EE3\u7801\u6765\u6E90", bottomSeparator: "none", childrenLayout: "below", children: SP_JSX.jsxs("div", { style: small, children: [SOURCE_LABELS[status?.source ?? ""] ?? "—", "\u3000", status?.project_dir] }) }) }), status?.project_ok === false ? (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.Field, { label: "\u9879\u76EE\u76EE\u5F55", bottomSeparator: "none", childrenLayout: "below", children: SP_JSX.jsxs("div", { style: { ...small, color: "#ff9a9a" }, children: ["\u672A\u627E\u5230\uFF1A", status.project_dir] }) }) })) : null] }));
+                    } }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: busy || !portChanged, onClick: applyPort, children: running ? L.applyPort : L.savePort }) }), HINT_KEYS.map((key) => status?.hints?.[key] ? (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.Field, { label: L.hints[key], bottomSeparator: "none", childrenLayout: "below", children: SP_JSX.jsx("div", { style: small, children: status.hints[key] }) }) }, key)) : null), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.Field, { label: L.source, bottomSeparator: "none", childrenLayout: "below", children: SP_JSX.jsxs("div", { style: small, children: [L.sources[status?.source ?? ""] ?? "—", "\u3000", status?.project_dir] }) }) }), status?.project_ok === false ? (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.Field, { label: L.projectDir, bottomSeparator: "none", childrenLayout: "below", children: SP_JSX.jsxs("div", { style: { ...small, color: "#ff9a9a" }, children: [L.notFound, status.project_dir] }) }) })) : null] }));
 }
 var index = DFL.definePlugin(() => ({
     name: "SteamMediaExport",
-    title: SP_JSX.jsx("div", { className: DFL.staticClasses.Title, children: "Steam \u5A92\u4F53\u5BFC\u51FA" }),
+    title: SP_JSX.jsx("div", { className: DFL.staticClasses.Title, children: L.title }),
     content: SP_JSX.jsx(Content, {}),
     icon: SP_JSX.jsx(QrIcon, {}),
     onDismount() { },

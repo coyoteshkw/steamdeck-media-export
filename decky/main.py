@@ -46,12 +46,40 @@ def bundled_project() -> Optional[Path]:
     return vendor if (vendor / "steam_exporter").is_dir() else None
 
 # 启动输出里需要回显到面板的信息行
+# (key, (中文前缀, English prefix)) —— 服务端启动时会同时打印中英两行
 INFO_PREFIXES = (
-    ("out", "输出："),
-    ("cache", "下载缓存："),
-    ("trash", "回收站："),
-    ("preview", "预览缓存："),
+    ("out", ("输出：", "Output: ")),
+    ("cache", ("下载缓存：", "Download cache: ")),
+    ("trash", ("回收站：", "Trash: ")),
+    ("preview", ("预览缓存：", "Preview cache: ")),
 )
+
+MESSAGES = {
+    "project_missing": {
+        "zh": "项目目录不存在：{path}",
+        "en": "Project folder not found: {path}",
+    },
+    "port_busy": {
+        "zh": "端口 {preferred} 被占用，已自动改用 {actual}",
+        "en": "Port {preferred} is busy; using {actual} instead",
+    },
+    "out_mkdir": {
+        "zh": "无法创建输出目录：{error}",
+        "en": "Cannot create output directory: {error}",
+    },
+    "start_failed": {
+        "zh": "启动失败：{error}",
+        "en": "Failed to start: {error}",
+    },
+    "exited": {
+        "zh": "服务启动后立即退出：{tail}",
+        "en": "Service exited immediately: {tail}",
+    },
+    "exited_no_tail": {
+        "zh": "服务启动后立即退出",
+        "en": "Service exited immediately",
+    },
+}
 
 
 # ---------------------------------------------------------------------------
@@ -165,6 +193,7 @@ class Plugin:
     process: Optional[subprocess.Popen] = None
     port: int = PORT_DEFAULT
     ip: Optional[str] = None  # 只在 start_server 时探测一次
+    lang: str = "zh"
     log_lines: deque = deque(maxlen=200)
     error: Optional[str] = None
     _reader: Optional[threading.Thread] = None
@@ -242,17 +271,29 @@ class Plugin:
         except Exception:
             pass
 
+    def _set_lang(self, lang: Optional[str]) -> None:
+        if lang:
+            self.lang = "en" if str(lang).lower().startswith("en") else "zh"
+
+    def _msg(self, key: str, **values) -> str:
+        item = MESSAGES[key]
+        template = item.get(self.lang) or item["zh"]
+        return template.format(**values)
+
     def _hints(self) -> dict[str, str]:
         found: dict[str, str] = {}
+        index = 1 if self.lang == "en" else 0
         for line in self.log_lines:
             text = line.strip()
-            for key, prefix in INFO_PREFIXES:
+            for key, prefixes in INFO_PREFIXES:
+                prefix = prefixes[index]
                 if key not in found and text.startswith(prefix):
-                    found[key] = text[len(prefix):]
+                    found[key] = text[len(prefix):].strip()
         return found
 
     # -- 对外方法（前端 call 调用）------------------------------------------
-    async def get_status(self) -> dict:
+    async def get_status(self, lang: Optional[str] = None) -> dict:
+        self._set_lang(lang)
         config = self._config()
         running = self._alive()
         port = self.port if running else int(self._get("port", PORT_DEFAULT))
@@ -274,14 +315,15 @@ class Plugin:
             "error": self.error,
         }
 
-    async def start_server(self, port: Optional[int] = None) -> dict:
+    async def start_server(self, port: Optional[int] = None, lang: Optional[str] = None) -> dict:
+        self._set_lang(lang)
         self.error = None
         # 只在启动时探测一次本机 IP；之后 get_status 直接用它，不再碰网络
         self.ip = pick_lan_ip()
         config = self._config()
         project = Path(config["project"])
         if not project.is_dir():
-            self.error = f"项目目录不存在：{project}"
+            self.error = self._msg("project_missing", path=project)
             return await self.get_status()
         if self._alive():
             return await self.get_status()
@@ -292,13 +334,13 @@ class Plugin:
         actual = find_free_port(preferred)
         self.port = actual
         if actual != preferred:
-            self.error = f"端口 {preferred} 被占用，已自动改用 {actual}"
+            self.error = self._msg("port_busy", preferred=preferred, actual=actual)
 
         # 输出目录不存在就帮忙创建
         try:
             Path(config["out"]).expanduser().mkdir(parents=True, exist_ok=True)
         except OSError as exc:
-            self.error = f"无法创建输出目录：{exc}"
+            self.error = self._msg("out_mkdir", error=exc)
 
         env = os.environ.copy()
         env["PATH"] = "/usr/bin:/usr/local/bin:" + env.get("PATH", "")
@@ -336,7 +378,7 @@ class Plugin:
             )
         except OSError as exc:
             self.process = None
-            self.error = f"启动失败：{exc}"
+            self.error = self._msg("start_failed", error=exc)
             return await self.get_status()
 
         self._reader = threading.Thread(target=self._drain_output, daemon=True)
@@ -351,10 +393,11 @@ class Plugin:
                 break
         if not self._alive():
             tail = " / ".join(list(self.log_lines)[-3:])
-            self.error = f"服务启动后立即退出：{tail}" if tail else "服务启动后立即退出"
+            self.error = self._msg("exited", tail=tail) if tail else self._msg("exited_no_tail")
         return await self.get_status()
 
-    async def stop_server(self) -> dict:
+    async def stop_server(self, lang: Optional[str] = None) -> dict:
+        self._set_lang(lang)
         if self._alive():
             assert self.process is not None
             self.process.terminate()
@@ -365,7 +408,8 @@ class Plugin:
         self.process = None
         return await self.get_status()
 
-    async def set_port(self, port: int) -> dict:
+    async def set_port(self, port: int, lang: Optional[str] = None) -> dict:
+        self._set_lang(lang)
         self._set("port", int(port))
         if self._alive():
             await self.stop_server()
