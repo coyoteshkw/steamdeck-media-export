@@ -7,6 +7,10 @@ from **SteamOS / Steam**, with a built-in web UI for browsing and downloading fr
 tablet or another computer. It can also be installed as a **Decky Loader plugin** to toggle
 the server from the Game Mode quick access menu.
 
+This project was mainly built to make my own Steam Deck experience more comfortable. I try my best
+to fix bugs and add improvements, but there may still be many things you are not satisfied with.
+Feel free to fork it and make any changes you like.
+
 **Features**
 
 - **Lossless export** (`-c copy`, zero quality loss, close to disk-copy speed)
@@ -20,7 +24,7 @@ the server from the Game Mode quick access menu.
 
 > Target platform is Steam Deck / SteamOS; it also works on any Linux with Steam + ffmpeg.
 
-![Recordings page — English, MacBook Air M1](docs/images/recordings-mac-en.png)
+![Recordings page — English, PC](docs/images/recordings-mac-en.png)
 
 ## Contents
 
@@ -142,13 +146,13 @@ mode and opened game are stored in the URL, so refreshing keeps you where you we
   button for the **first 5 minutes** (`-c copy` remux, no re-encode, no disk writes)
 - **Open folder** runs `xdg-open` on the Deck
 
-**MacBook Air M1 (1440×900)**
+**PC (1440×900)**
 
-![Recordings — English, MacBook Air M1](docs/images/recordings-mac-en.png)
+![Recordings — English, PC](docs/images/recordings-mac-en.png)
 
-**Xiaomi 13 (393×873)**
+**Phone (393×873)**
 
-<img src="docs/images/recordings-mi-en.png" width="360" alt="Recordings — English, Xiaomi 13">
+<img src="docs/images/recordings-mi-en.png" width="360" alt="Recordings — English, Phone">
 
 ### Screenshots
 
@@ -172,13 +176,13 @@ Click **Screenshots** in the top bar (same server, token and LAN URL as recordin
 > `screenshots.vdf` only adds exact time, size and captions. Steam may write a half-finished vdf
 > while running — the tool tolerates that.
 
-**MacBook Air M1 (1440×900)**
+**PC (1440×900)**
 
-![Screenshots — English, MacBook Air M1](docs/images/screenshots-mac-en.png)
+![Screenshots — English, PC](docs/images/screenshots-mac-en.png)
 
-**Xiaomi 13 (393×873)**
+**Phone (393×873)**
 
-<img src="docs/images/screenshots-mi-en.png" width="360" alt="Screenshots — English, Xiaomi 13">
+<img src="docs/images/screenshots-mi-en.png" width="360" alt="Screenshots — English, Phone">
 
 ### Delete
 
@@ -518,6 +522,9 @@ MIT
 方便在手机、平板或另一台电脑上浏览、下载。也可以装成 **Decky Loader 插件**，在游戏模式的
 快捷菜单里一键开关。
 
+这个项目主要是为了我个人的 Steam Deck 用着舒服做的。虽然我尽可能修复 bug 和添加优化，
+但仍然可能有很多你不满意的地方，欢迎 fork 做任何修改。
+
 **主要特性**
 
 - **无损导出**（`-c copy`，画质零损失、速度接近磁盘拷贝）
@@ -531,7 +538,7 @@ MIT
 
 > 目标平台是 Steam Deck / SteamOS；任何有 Steam + ffmpeg 的 Linux 都能用。
 
-![录像页 — 中文，MacBook Air M1](docs/images/recordings-mac-zh.png)
+![录像页 — 中文，PC 端](docs/images/recordings-mac-zh.png)
 
 ## 目录
 
@@ -651,13 +658,13 @@ MIT
   （`-c copy` remux，不转码、不落盘）
 - 「打开导出目录」在 Deck 上执行 `xdg-open`
 
-**MacBook Air M1（1440×900）**
+**PC 端（1440×900）**
 
-![录像页 — 中文，MacBook Air M1](docs/images/recordings-mac-zh.png)
+![录像页 — 中文，PC 端](docs/images/recordings-mac-zh.png)
 
-**小米 13（393×873）**
+**手机端（393×873）**
 
-<img src="docs/images/recordings-mi-zh.png" width="360" alt="录像页 — 中文，小米 13">
+<img src="docs/images/recordings-mi-zh.png" width="360" alt="录像页 — 中文，手机端">
 
 ### 截图图库
 
@@ -679,13 +686,13 @@ MIT
 > 截图以**文件系统为准**（`760/remote/<gameid>/screenshots/`），`screenshots.vdf`
 > 只用于补充精确时间、尺寸与标题；Steam 运行时 vdf 可能只写一半，工具会容错。
 
-**MacBook Air M1（1440×900）**
+**PC 端（1440×900）**
 
-![截图页 — 中文，MacBook Air M1](docs/images/screenshots-mac-zh.png)
+![截图页 — 中文，PC 端](docs/images/screenshots-mac-zh.png)
 
-**小米 13（393×873）**
+**手机端（393×873）**
 
-<img src="docs/images/screenshots-mi-zh.png" width="360" alt="截图页 — 中文，小米 13">
+<img src="docs/images/screenshots-mi-zh.png" width="360" alt="截图页 — 中文，手机端">
 
 ### 删除录制
 
