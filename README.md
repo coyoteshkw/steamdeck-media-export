@@ -291,7 +291,7 @@ npm install --legacy-peer-deps && npm run build
 Both ZIPs install via Decky → Settings → Developer → Install from ZIP. The target machine
 needs `python3` and `ffmpeg` (bundled with SteamOS).
 
-When a version tag is pushed, GitHub Actions builds both ZIPs and attaches them to
+When a version tag is pushed, GitHub Actions builds the self-contained ZIP and attaches it to
 [Releases](https://github.com/coyoteshkw/steamdeck-media-export/releases) — see
 [`decky/README.md`](decky/README.md).
 
@@ -797,7 +797,7 @@ npm install --legacy-peer-deps && npm run build
 两种 ZIP 都可在 Decky 设置 → 开发者 → 从 ZIP 安装。目标机器需有 `python3` 和
 `ffmpeg`（SteamOS 自带）。
 
-推送版本标签后，两个 ZIP 会自动附加到
+推送版本标签后，自包含 ZIP 会自动附加到
 [Releases](https://github.com/coyoteshkw/steamdeck-media-export/releases)（见 `decky/README.md`）。
 
 ---

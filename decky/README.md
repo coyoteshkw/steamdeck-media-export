@@ -144,7 +144,7 @@ npm run build          # 产出 dist/index.js
 ## 发布到 GitHub Release
 
 仓库自带 `.github/workflows/release-decky.yml`：推送 `v*` 或 `decky-v*` 标签后，
-GitHub Actions 会自动构建并把两个 ZIP 附加到对应的 Release：
+GitHub Actions 会自动构建并把**自包含 ZIP** 附加到对应的 Release：
 
 ```bash
 git tag v0.4.14
@@ -153,8 +153,7 @@ git push origin v0.4.14
 
 Release 里会出现：
 
-- `SteamMediaExport-v0.1.5.zip`（薄壳）
-- `SteamMediaExport-v0.1.5-selfcontained.zip`（自包含）
+- `SteamMediaExport-v0.1.5-selfcontained.zip`（自包含，直接可装）
 
 别人在 Releases 页下载自包含 ZIP 后，用 Decky 设置 → 开发者 → 从 ZIP 安装即可。
 

@@ -33,13 +33,11 @@ jobs:
         working-directory: decky
         run: |
           chmod +x package.sh
-          ./package.sh
           ./package.sh --self-contained
 
       - name: Create / update release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            decky/SteamMediaExport-*.zip
+          files: decky/SteamMediaExport-*-selfcontained.zip
           generate_release_notes: true
           fail_on_unmatched_files: true
