@@ -2,6 +2,13 @@
 
 > 历史记录；当前版本见 `steam_exporter/__init__.py`。
 
+### 0.4.15（2026-10-16）
+
+- 修复 `GLIBCXX_x.x.x not found`（libopenmpt / libx265 / librubberband 等）：
+  Decky 插件（PyInstaller）会设置 `LD_LIBRARY_PATH=/tmp/_MEI…`，其中旧 libstdc++
+  会被系统 ffmpeg 加载。新增 `util.clean_media_env()`，在 spawn ffmpeg 时清掉
+  `LD_LIBRARY_PATH` / `LD_PRELOAD`，覆盖导出、预览、在线播放、下载流。
+
 ### 0.4.14（2026-10-16）
 
 - 终端启动信息改为「整段英文 + 整段中文」，不再逐行穿插。

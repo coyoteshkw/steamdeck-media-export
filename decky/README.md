@@ -163,6 +163,23 @@ Release 里会出现：
 不想用 Actions 的话，也可以本地 `./package.sh --self-contained` 后，
 在 GitHub 网页上创建 Release 并手动上传 ZIP。
 
+## 常见问题
+
+### `GLIBCXX_x.x.x not found` / `libopenmpt` 报错
+
+Decky 的插件后端跑在 PyInstaller 里，环境变量里会带
+`LD_LIBRARY_PATH=/tmp/_MEI…`，里面的旧 `libstdc++.so.6` 会让系统 ffmpeg 报：
+
+```
+/usr/bin/ffmpeg: …/libstdc++.so.6: version `GLIBCXX_3.4.32' not found
+                (required by /usr/lib/libopenmpt.so.0)
+```
+
+插件从 **0.1.6** 起会在 spawn `serve` 时清掉 `LD_LIBRARY_PATH` / `LD_PRELOAD` /
+`PYTHONHOME`；主程序从 **0.4.15** 起 spawn ffmpeg 时也会清掉
+`LD_LIBRARY_PATH` / `LD_PRELOAD`。遇到这个报错时：升级插件到 0.1.6+ 后**关开一次开关**，
+或在终端里手动跑 `./bin/steamexport-serve`（终端环境本来就是干净的）。
+
 ## 可调设置
 
 设置存在 `~/homebrew/settings/SteamMediaExport/settings.json`（由 Decky 的 `SettingsManager` 管理）：

@@ -13,6 +13,8 @@ import threading
 import time
 from pathlib import Path
 
+from .util import clean_media_env
+
 # 限制并发，避免同时抽多帧打满 CPU
 _SEMAPHORE = threading.Semaphore(2)
 FFMPEG = "ffmpeg"
@@ -25,6 +27,7 @@ def _run(cmd: list[str], timeout: float = 60.0) -> bool:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             timeout=timeout,
+            env=clean_media_env(),
         )
         return result.returncode == 0
     except (OSError, subprocess.TimeoutExpired):

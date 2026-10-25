@@ -6,5 +6,5 @@
 仅依赖 Python 标准库 + 系统 ffmpeg。
 """
 
-__version__ = "0.4.14"
+__version__ = "0.4.15"
 __all__ = ["__version__"]

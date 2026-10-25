@@ -472,6 +472,10 @@ system limits:
 8. **Corrupted recordings**: some recordings have a 0-byte `init-stream0.m4s`. The tool skips
    empty files, tries a best-effort header recovery from a recording with the same resolution,
    and clearly skips the item if recovery fails, without affecting the rest.
+9. **`GLIBCXX_x.x.x not found` (libopenmpt / libx265 / …)**: when the server is started from the
+   Decky plugin, `LD_LIBRARY_PATH` may point to an older `libstdc++` inside the PyInstaller
+   `_MEI` folder. Since 0.4.15 ffmpeg is always spawned with a cleaned environment
+   (`LD_LIBRARY_PATH` / `LD_PRELOAD` removed), so this no longer happens.
 
 ---
 
@@ -518,6 +522,11 @@ See [`docs/format.md`](docs/format.md) for details.
 ## Changelog
 
 Recent entries (full history in [`docs/CHANGELOG.md`](docs/CHANGELOG.md)):
+
+### 0.4.15
+
+- 修复 `GLIBCXX_x.x.x not found`：spawn ffmpeg 时清掉 `LD_LIBRARY_PATH` / `LD_PRELOAD`，
+  避免 Decky/PyInstaller 的旧 libstdc++ 被系统 ffmpeg 加载（覆盖导出/预览/播放/下载流）。
 
 ### 0.4.14
 
@@ -999,6 +1008,9 @@ Steam 录像是 DASH 分片，一个 51 分钟的剪辑就有上千个分片，�
 8. **损坏录制自动恢复**：个别录制的视频头（`init-stream0.m4s`）可能为 0 字节。
    工具会跳过空文件，并尝试借用其它**同分辨率**录制的头部做 best-effort 恢复；
    无法恢复时明确提示并跳过，不影响其余导出。
+9. **`GLIBCXX_x.x.x not found`（libopenmpt / libx265 等）**：从 Decky 插件启动时，
+   环境里的 `LD_LIBRARY_PATH` 可能指向 PyInstaller `_MEI` 里的旧 `libstdc++`。
+   自 0.4.15 起，spawn ffmpeg 时会清掉 `LD_LIBRARY_PATH` / `LD_PRELOAD`，不会再出现。
 
 ---
 

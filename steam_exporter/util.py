@@ -74,6 +74,19 @@ class ExportCancelled(Exception):
     """用户主动取消了导出。"""
 
 
+def clean_media_env() -> dict[str, str]:
+    """ffmpeg 子进程环境：去掉 LD_LIBRARY_PATH / LD_PRELOAD。
+
+    Decky 插件后端跑在 PyInstaller 里，环境里的 LD_LIBRARY_PATH 指向 _MEI，
+    其中的旧 libstdc++ 会让系统 ffmpeg 报「GLIBCXX_x.x.x not found」
+    （libopenmpt / libx265 / librubberband 等）。
+    """
+    env = os.environ.copy()
+    for key in ("LD_LIBRARY_PATH", "LD_PRELOAD"):
+        env.pop(key, None)
+    return env
+
+
 def find_tool(name: str) -> str | None:
     return shutil.which(name)
 
@@ -151,7 +164,11 @@ def run_ffmpeg(
 
     if on_progress is None:
         process = subprocess.Popen(
-            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=clean_media_env(),
         )
         done, _watcher = _start_cancel_watcher(process, cancel_event)
         try:
@@ -170,6 +187,7 @@ def run_ffmpeg(
         stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,
+        env=clean_media_env(),
     )
     done, _watcher = _start_cancel_watcher(process, cancel_event)
     errors: list[str] = []

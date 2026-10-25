@@ -56,6 +56,7 @@ from .screenshots import (
 from .util import (
     ExportCancelled,
     FFmpegError,
+    clean_media_env,
     find_tool,
     run_ffmpeg,
     sanitize_value,
@@ -553,7 +554,9 @@ class Handler(BaseHTTPRequestHandler):
 
         filename = download_filename(source)
         cmd = ["ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error"] + args
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        process = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=clean_media_env()
+        )
         try:
             self.send_response(200)
             self.send_header("Content-Type", "video/mp4")
@@ -902,7 +905,9 @@ class Handler(BaseHTTPRequestHandler):
             "pipe:1",
         ]
         cmd = ["ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error", *args]
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        process = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=clean_media_env()
+        )
         try:
             self.send_response(200)
             self.send_header("Content-Type", "video/mp4")

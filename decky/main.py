@@ -343,6 +343,12 @@ class Plugin:
             self.error = self._msg("out_mkdir", error=exc)
 
         env = os.environ.copy()
+        # Decky 插件后端跑在 PyInstaller 里，环境里的 LD_LIBRARY_PATH 指向 _MEI 目录，
+        # 那里带的旧 libstdc++ 会让系统 ffmpeg 报「GLIBCXX_x.x.x not found」
+        # （libopenmpt / libx265 / librubberband 等）。子进程是系统 Python，
+        # 不需要这些库路径，直接去掉。
+        for key in ("LD_LIBRARY_PATH", "LD_PRELOAD", "PYTHONHOME"):
+            env.pop(key, None)
         env["PATH"] = "/usr/bin:/usr/local/bin:" + env.get("PATH", "")
         env["PYTHONUNBUFFERED"] = "1"
         env["PYTHONPATH"] = config["project"] + (
