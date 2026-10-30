@@ -131,7 +131,7 @@ npm run build          # 产出 dist/index.js
 
 1. 设置里的 `project_dir`（自定义）
 2. 包内 `vendor/`（内置，只有自包含包才有）
-3. 默认仓库路径 `~/code-study/steam-recording-exporter`
+3. 默认仓库路径 `~/steam-recording-exporter`（在别处时设置 `project_dir`）
 
 所以：**自包含包分发出去后不依赖仓库**；本机开发用薄壳包，改主程序后
 开关关开一次即可生效（无需重打包）。

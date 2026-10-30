@@ -3,7 +3,8 @@
 设计（B2）：
 - 本文件运行在 Decky 自带的 Python 里，**只负责**用系统 ``/usr/bin/python3``
   以子进程方式启动项目里的 ``steam_exporter serve``。
-- 项目代码（``~/code-study/steam-recording-exporter``）完全不被改动，也无需重新打包。
+- 项目代码（``project_dir``，薄壳模式默认 ``~/steam-recording-exporter``）完全不被改动，
+  也无需重新打包。
 - 默认关闭、不记忆状态；端口冲突时自动顺延；token 默认 ``hello``。
 """
 
@@ -30,7 +31,7 @@ PORT_TRIES = 50  # 端口冲突时最多往后试多少个
 
 
 def _default_project(home: str) -> str:
-    return str(Path(home) / "code-study" / "steam-recording-exporter")
+    return str(Path(home) / "steam-recording-exporter")
 
 
 def _default_out(home: str) -> str:
