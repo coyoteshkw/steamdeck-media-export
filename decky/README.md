@@ -175,10 +175,27 @@ Decky 的插件后端跑在 PyInstaller 里，环境变量里会带
                 (required by /usr/lib/libopenmpt.so.0)
 ```
 
+同一个泄漏还会让子进程 `/usr/bin/python3` 加载 `_MEI` 里的 libpython，报
+`Failed to import encodings module` / `<no Python frame>`。
+
 插件从 **0.1.6** 起会在 spawn `serve` 时清掉 `LD_LIBRARY_PATH` / `LD_PRELOAD` /
-`PYTHONHOME`；主程序从 **0.4.15** 起 spawn ffmpeg 时也会清掉
-`LD_LIBRARY_PATH` / `LD_PRELOAD`。遇到这个报错时：升级插件到 0.1.6+ 后**关开一次开关**，
-或在终端里手动跑 `./bin/steamexport-serve`（终端环境本来就是干净的）。
+`PYTHONHOME` / `PYTHONSTARTUP` / `PYTHONEXECUTABLE`；主程序从 **0.4.15** 起
+spawn ffmpeg 时也会清掉 `LD_LIBRARY_PATH` / `LD_PRELOAD`。遇到这个报错时：
+升级插件后**关开一次开关**，或在终端里手动跑 `./bin/steamexport-serve`。
+
+### 以 root 运行（`Path.home()` 是 `/root`）
+
+部分发行版（如 Bazzite）上 Decky 会以 root 运行插件后端，此时 `Path.home()` 是
+`/root`，会导致扫不到 Steam 库、输出/缓存落到 `/root`。插件从 **0.1.7** 起：
+
+1. 按 `DECKY_USER_HOME` → `/home/deck` → `steam` 进程 uid 的顺序找桌面用户；
+2. 以该用户身份启动 `serve`（root 时自动降权），并设置 `HOME` / `USER` /
+   `XDG_RUNTIME_DIR`；
+3. 默认项目目录、输出目录、缓存/回收站都按该用户的 home 计算；
+4. 以 root 创建输出目录后 `chown` 回该用户。
+
+日志里的「项目=…（来源=…）」现在打印**实际解析结果**（`bundled` / `repo` / `custom`），
+不再是原始默认值。
 
 ## 可调设置
 

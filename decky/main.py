@@ -26,9 +26,90 @@ import decky  # type: ignore
 # ---------------------------------------------------------------------------
 PORT_DEFAULT = 8787
 TOKEN_DEFAULT = "hello"
-PROJECT_DEFAULT = str(Path.home() / "code-study" / "steam-recording-exporter")
-OUT_DEFAULT = str(Path.home() / "Videos" / "SteamExports")
 PORT_TRIES = 50  # 端口冲突时最多往后试多少个
+
+
+def _default_project(home: str) -> str:
+    return str(Path(home) / "code-study" / "steam-recording-exporter")
+
+
+def _default_out(home: str) -> str:
+    return str(Path(home) / "Videos" / "SteamExports")
+
+
+def _name_for_uid(uid: int) -> str:
+    try:
+        import pwd
+
+        return pwd.getpwuid(uid).pw_name
+    except (ImportError, KeyError):
+        return str(uid)
+
+
+def _resolve_session_user() -> Optional[tuple[str, str, int, int]]:
+    """找到桌面用户 (home, name, uid, gid)。
+
+    Decky 在部分系统上以 root 运行插件后端，此时 Path.home() 是 /root，
+    会导致 Steam 扫描不到、输出目录落到 /root。按以下顺序找真实用户：
+
+    1. Decky 注入的 DECKY_USER_HOME / DECKY_USER
+    2. /home/deck（SteamOS，可能是 /home/<user> 的符号链接）
+    3. 运行中的 steam / steamwebhelper 进程的 uid
+
+    找不到时返回 None（保持当前用户）。
+    """
+    try:
+        if os.geteuid() != 0:
+            return str(Path.home()), os.environ.get("USER", ""), os.getuid(), os.getgid()
+    except OSError:
+        return None
+
+    candidates: list[tuple[str, str, int, int]] = []
+
+    home = getattr(decky, "DECKY_USER_HOME", None) or os.environ.get("DECKY_USER_HOME")
+    if home:
+        try:
+            st = os.stat(home)
+            name = (
+                getattr(decky, "DECKY_USER", None)
+                or os.environ.get("DECKY_USER")
+                or _name_for_uid(st.st_uid)
+            )
+            candidates.append((str(home), name, st.st_uid, st.st_gid))
+        except OSError:
+            pass
+
+    try:
+        deck_home = Path("/home/deck")
+        if deck_home.exists():
+            real = deck_home.resolve()
+            st = real.stat()
+            candidates.append((str(real), _name_for_uid(st.st_uid), st.st_uid, st.st_gid))
+    except OSError:
+        pass
+
+    for proc in ("steam", "steamwebhelper"):
+        try:
+            out = subprocess.run(
+                ["pgrep", "-x", proc], capture_output=True, text=True, timeout=2
+            ).stdout.split()
+        except (OSError, subprocess.SubprocessError):
+            out = []
+        for pid in out[:1]:
+            try:
+                st = os.stat(f"/proc/{pid}")
+                import pwd
+
+                pw = pwd.getpwuid(st.st_uid)
+            except (OSError, ImportError, KeyError):
+                continue
+            if pw.pw_dir:
+                candidates.append((pw.pw_dir, pw.pw_name, st.st_uid, st.st_gid))
+
+    for home, name, uid, gid in candidates:
+        if uid != 0 and home and Path(home).is_dir():
+            return home, name, uid, gid
+    return None
 
 
 def _plugin_dir() -> Optional[Path]:
@@ -194,6 +275,8 @@ class Plugin:
     port: int = PORT_DEFAULT
     ip: Optional[str] = None  # 只在 start_server 时探测一次
     lang: str = "zh"
+    _user_cache: Any = None
+    _user_ready: bool = False
     log_lines: deque = deque(maxlen=200)
     error: Optional[str] = None
     _reader: Optional[threading.Thread] = None
@@ -233,6 +316,18 @@ class Plugin:
         manager.setSetting(key, value)
         manager.commit()
 
+    def _session_user(self) -> Optional[tuple[str, str, int, int]]:
+        if not Plugin._user_ready:
+            Plugin._user_cache = _resolve_session_user()
+            Plugin._user_ready = True
+        return Plugin._user_cache
+
+    def _user_home(self) -> str:
+        user = self._session_user()
+        if user is not None:
+            return user[0]
+        return str(Path.home())
+
     def _resolve_project(self) -> tuple[str, str]:
         """返回 (主程序目录, 来源)。优先级：显式设置 > 内置 vendor > 默认仓库路径。
 
@@ -246,14 +341,15 @@ class Plugin:
         bundled = bundled_project()
         if bundled is not None:
             return str(bundled), "bundled"
-        return str(Path(PROJECT_DEFAULT).expanduser()), "repo"
+        return str(Path(_default_project(self._user_home())).expanduser()), "repo"
 
     def _config(self) -> dict[str, str]:
         project, source = self._resolve_project()
+        home = self._user_home()
         return {
             "project": project,
             "source": source,
-            "out": str(Path(self._get("out_dir", OUT_DEFAULT)).expanduser()),
+            "out": str(Path(self._get("out_dir", _default_out(home))).expanduser()),
             "token": str(self._get("token", TOKEN_DEFAULT)),
         }
 
@@ -336,24 +432,48 @@ class Plugin:
         if actual != preferred:
             self.error = self._msg("port_busy", preferred=preferred, actual=actual)
 
-        # 输出目录不存在就帮忙创建
+        user = self._session_user()
+
+        # 输出目录不存在就帮忙创建；root 创建时把属主改回桌面用户
+        out_path = Path(config["out"]).expanduser()
         try:
-            Path(config["out"]).expanduser().mkdir(parents=True, exist_ok=True)
+            out_path.mkdir(parents=True, exist_ok=True)
+            if os.geteuid() == 0 and user is not None and user[2] != 0:
+                os.chown(out_path, user[2], user[3])
         except OSError as exc:
             self.error = self._msg("out_mkdir", error=exc)
 
         env = os.environ.copy()
         # Decky 插件后端跑在 PyInstaller 里，环境里的 LD_LIBRARY_PATH 指向 _MEI 目录，
-        # 那里带的旧 libstdc++ 会让系统 ffmpeg 报「GLIBCXX_x.x.x not found」
-        # （libopenmpt / libx265 / librubberband 等）。子进程是系统 Python，
-        # 不需要这些库路径，直接去掉。
-        for key in ("LD_LIBRARY_PATH", "LD_PRELOAD", "PYTHONHOME"):
+        # 那里带的旧 libstdc++ 会让系统 ffmpeg 报「GLIBCXX_x.x.x not found」；
+        # 同理还会让 /usr/bin/python3 加载包内的 libpython（找不到 encodings）。
+        # 子进程是系统 Python，不需要这些变量，直接去掉。
+        for key in (
+            "LD_LIBRARY_PATH",
+            "LD_PRELOAD",
+            "PYTHONHOME",
+            "PYTHONSTARTUP",
+            "PYTHONEXECUTABLE",
+        ):
             env.pop(key, None)
         env["PATH"] = "/usr/bin:/usr/local/bin:" + env.get("PATH", "")
         env["PYTHONUNBUFFERED"] = "1"
         env["PYTHONPATH"] = config["project"] + (
             ":" + env["PYTHONPATH"] if env.get("PYTHONPATH") else ""
         )
+        popen_kwargs: dict[str, Any] = {}
+        if user is not None:
+            home, name, uid, gid = user
+            env["HOME"] = home
+            env["USER"] = name
+            env["LOGNAME"] = name
+            runtime_dir = f"/run/user/{uid}"
+            if Path(runtime_dir).is_dir():
+                env["XDG_RUNTIME_DIR"] = runtime_dir
+            # Decky 以 root 运行时，把子进程降权到桌面用户，
+            # 这样 ~ 路径、文件属主、Steam 库位置都是对的。
+            if os.geteuid() == 0 and uid != 0:
+                popen_kwargs = {"user": uid, "group": gid, "extra_groups": []}
         cmd = [
             "/usr/bin/python3",
             "-u",
@@ -381,6 +501,7 @@ class Plugin:
                 stderr=subprocess.STDOUT,
                 text=True,
                 bufsize=1,
+                **popen_kwargs,
             )
         except OSError as exc:
             self.process = None
@@ -425,10 +546,14 @@ class Plugin:
     # -- 生命周期 -----------------------------------------------------------
     async def _main(self) -> None:
         self.log_lines = deque(maxlen=200)
+        Plugin._user_ready = False
         self.port = int(self._get("port", PORT_DEFAULT))
+        project, source = self._resolve_project()
         decky.logger.info(
-            "[SteamMediaExport] 已加载，项目=%s 端口=%s"
-            % (self._get("project_dir", PROJECT_DEFAULT), self.port)
+            "[SteamMediaExport] 已加载，项目=%s（来源=%s）端口=%s",
+            project,
+            source,
+            self.port,
         )
 
     async def _unload(self) -> None:
